@@ -1,5 +1,8 @@
 {
-  "name": "Kurti Times",
-  "description": "A modern e-commerce destination for ethnic chic fashion, featuring Kurti Sets, Indo-Western wear, Co-ord Sets, and Tunics.",
-  "requestFramePermissions": []
+  "name": "BarterHub",
+  "description": "A modern, trust-oriented barter platform for exchanging goods and services.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

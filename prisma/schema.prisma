@@ -1,0 +1,88 @@
+// Prisma schema for BarterHub
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String    @id @default(cuid())
+  name                  String?
+  emailOrPhone          String    @unique
+  avatar                String    @default("https://api.dicebear.com/7.x/initials/svg?seed=BH")
+  location              String    @default("Surat, Gujarat")
+  rating                Float     @default(4.8)
+  tradesCount           Int       @default(0)
+  isVerified            Boolean   @default(true)
+  isTopTrader           Boolean   @default(false)
+  responseRate          String    @default("100%")
+  cashUsed              Float     @default(0.0)
+  phoneVerified         Boolean   @default(true)
+  idVerified            Boolean   @default(false)
+  idVerificationStatus  String    @default("unverified")
+  aadhaarFront          String?
+  aadhaarBack           String?
+  interests             Json?     // Stored as JSON array
+  isOnboardingCompleted Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  listings              Listing[]
+  sentMessages          Message[] @relation("SentMessages")
+  receivedMessages      Message[] @relation("ReceivedMessages")
+
+  @@index([emailOrPhone])
+}
+
+model Passcode {
+  id           String   @id @default(cuid())
+  emailOrPhone String   @unique
+  code         String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+}
+
+model Listing {
+  id                   String    @id @default(cuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                String
+  description          String
+  images               Json      // Stored as JSON array of image URLs
+  category             String
+  condition            String?
+  estimatedValue       Float
+  location             String
+  distance             String    @default("0.1km away")
+  wants                Json      // Stored as JSON array of strings
+  openToNegotiate      Boolean   @default(false)
+  negotiableCategories Json      // Stored as JSON array of categories
+  tags                 Json      // Stored as JSON array of tags
+  isService            Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  messages             Message[]
+
+  @@index([userId])
+  @@index([category])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  listingId  String?
+  listing    Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  text       String
+  timestamp  Float    // Milliseconds epoch timestamp
+  createdAt  DateTime @default(now())
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([listingId])
+}

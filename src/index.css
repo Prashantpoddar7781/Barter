@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+
+  --color-brand-primary: #2D6A4F;
+  --color-brand-secondary: #52B788;
+  --color-brand-accent: #D8F3DC;
+  --color-surface-beige: #F5F5F0;
+  --color-card-white: #FFFFFF;
+  --color-text-charcoal: #2D2D2D;
+  --color-border-sleek: #E5E5DF;
+}
+
+@layer base {
+  body {
+    @apply bg-surface-beige text-text-charcoal font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display font-bold tracking-tight;
+  }
+}
+
+@layer components {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap');

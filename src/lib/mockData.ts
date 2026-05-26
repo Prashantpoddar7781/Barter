@@ -1,0 +1,133 @@
+import { User, Listing, Offer } from '../types';
+
+export const currentUser: User = {
+  id: 'me',
+  name: 'Ravi Kumar',
+  avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=RK',
+  location: 'Surat, Gujarat',
+  rating: 4.8,
+  tradesCount: 47,
+  isVerified: true,
+  isTopTrader: true,
+  responseRate: '100%',
+  cashUsed: 0,
+  phoneVerified: true,
+  idVerified: true,
+  cancellationRate: '2%',
+  memberSince: 'Oct 2023',
+};
+
+export const mockUsers: User[] = [
+  {
+    id: 'priya',
+    name: 'Priya S.',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
+    location: 'Surat, Gujarat',
+    rating: 4.9,
+    tradesCount: 34,
+    isVerified: true,
+    isTopTrader: false,
+    responseRate: '95%',
+    cashUsed: 0,
+    phoneVerified: true,
+    idVerified: false,
+    cancellationRate: '0%',
+    memberSince: 'Jan 2024',
+  },
+  {
+    id: 'arjun',
+    name: 'Arjun M.',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun',
+    location: 'Remote',
+    rating: 4.7,
+    tradesCount: 12,
+    isVerified: true,
+    isTopTrader: false,
+    responseRate: '80%',
+    cashUsed: 0,
+    phoneVerified: true,
+    idVerified: true,
+    cancellationRate: '15%',
+    memberSince: 'Dec 2023',
+  },
+];
+
+export const mockListings: Listing[] = [
+  {
+    id: 'l1',
+    userId: 'priya',
+    title: 'Monstera plant (large)',
+    description: 'Large, healthy Monstera plant. Well-maintained.',
+    images: ['https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&q=80&w=400'],
+    category: 'Other',
+    condition: 'Healthy',
+    estimatedValue: 1500,
+    location: 'Surat, Gujarat',
+    distance: '2km away',
+    wants: ['Yoga sessions', 'Baked goods'],
+    openToNegotiate: false,
+    negotiableCategories: [],
+    tags: ['Goods', 'Service ok'],
+    createdAt: new Date().toISOString(),
+    isService: false,
+  },
+  {
+    id: 'l2',
+    userId: 'arjun',
+    title: 'Logo design (2 concepts)',
+    description: 'Professional logo design with 2 distinct concepts and revisions.',
+    images: ['https://images.unsplash.com/photo-1626785774573-4b799315345d?auto=format&fit=crop&q=80&w=400'],
+    category: 'Skills',
+    condition: 'New',
+    estimatedValue: 5000,
+    location: 'Remote',
+    distance: 'Remote',
+    wants: ['Web hosting credits', 'SEO help'],
+    openToNegotiate: true,
+    negotiableCategories: ['Creative Services', 'Other'],
+    tags: ['Service', 'Verified Pro'],
+    createdAt: new Date().toISOString(),
+    isService: true,
+  },
+  {
+    id: 'l3',
+    userId: 'me',
+    title: 'DSLR Camera (Canon 200D)',
+    description: 'Barely used Canon 200D with kit lens.',
+    images: ['https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&q=80&w=400'],
+    category: 'Electronics',
+    condition: 'Excellent',
+    estimatedValue: 35000,
+    location: 'Surat, Gujarat',
+    distance: '5km away',
+    wants: ['Laptop', 'Video editing service'],
+    openToNegotiate: true,
+    negotiableCategories: ['Electronics', 'Skills'],
+    tags: ['Goods or Service'],
+    createdAt: new Date().toISOString(),
+    isService: false,
+  },
+];
+
+export const mockOffers: Offer[] = [
+  {
+    id: 'o1',
+    listingId: 'l3', // My camera
+    senderId: 'arjun',
+    receiverId: 'me',
+    offeredItemIds: [],
+    offeredDescription: 'Logo design + 1yr hosting',
+    status: 'pending',
+    createdAt: new Date(Date.now() - 7200000).toISOString(), // 2h ago
+  },
+  {
+    id: 'o2',
+    listingId: 'l1', // Priya's plant
+    senderId: 'me',
+    receiverId: 'priya',
+    offeredItemIds: [],
+    status: 'pending',
+    note: 'Hi Priya, I can offer 3 yoga sessions this month...',
+    createdAt: new Date(Date.now() - 18000000).toISOString(), // 5h ago
+  }
+];
