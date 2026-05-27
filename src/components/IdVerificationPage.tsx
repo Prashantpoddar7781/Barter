@@ -12,7 +12,7 @@ import {
   Loader2, 
   Sparkles 
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, getApiUrl } from '../lib/utils';
 import { useAuth, defaultLocalUser, isVideoUrl, getCleanMediaUrl } from '../App';
 
 export const IdVerificationPage = () => {
@@ -147,7 +147,7 @@ export const IdVerificationPage = () => {
 
     try {
       setAnalysisStep(2);
-      const res = await fetch('/api/auth/verify-id', {
+      const res = await fetch(getApiUrl('/api/auth/verify-id'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

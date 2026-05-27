@@ -42,7 +42,7 @@ import {
   Brain,
   TrendingUp
 } from 'lucide-react';
-import { cn } from './lib/utils';
+import { cn, getApiUrl } from './lib/utils';
 import { Listing, User, Offer } from './types';
 import { mockListings, currentUser, mockOffers, mockUsers } from './lib/mockData';
 import { LoginPage, OnboardingPage } from './components/AuthFlow';
@@ -169,7 +169,7 @@ export const useAuth = () => {
       const token = localStorage.getItem('barter_user_token');
       if (!token) return;
       try {
-        const res = await fetch('/api/auth/me', {
+        const res = await fetch(getApiUrl('/api/auth/me'), {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (res.ok) {
@@ -223,7 +223,7 @@ export const useChats = () => {
     const token = localStorage.getItem('barter_user_token');
     if (!token) return;
     try {
-      const res = await fetch('/api/messages', {
+      const res = await fetch(getApiUrl('/api/messages'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
@@ -255,7 +255,7 @@ export const useChats = () => {
       if (newMsg) {
         const token = localStorage.getItem('barter_user_token');
         try {
-          const res = await fetch('/api/messages', {
+          const res = await fetch(getApiUrl('/api/messages'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -317,7 +317,7 @@ export const useListings = () => {
 
   const refreshListings = async () => {
     try {
-      const res = await fetch('/api/listings');
+      const res = await fetch(getApiUrl('/api/listings'));
       if (res.ok) {
         const data = await res.json();
         saveLocalListings(data);
@@ -336,7 +336,7 @@ export const useListings = () => {
       if (newListing) {
         const token = localStorage.getItem('barter_user_token');
         try {
-          const res = await fetch('/api/listings', {
+          const res = await fetch(getApiUrl('/api/listings'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -3201,7 +3201,7 @@ const ListingDetailPage = () => {
   useEffect(() => {
     let active = true;
     setLoadingIntel(true);
-    fetch('/api/ai/barter-intelligence', {
+    fetch(getApiUrl('/api/ai/barter-intelligence'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

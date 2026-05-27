@@ -27,6 +27,17 @@ const ai = new GoogleGenAI({
 
 app.use(express.json());
 
+// Enable CORS for cross-domain requests (Vercel frontend -> Railway backend)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Auth Request Type
 export interface AuthRequest extends express.Request {
   user?: {

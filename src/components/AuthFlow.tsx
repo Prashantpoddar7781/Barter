@@ -14,7 +14,7 @@ import {
   Plus, 
   Sparkles 
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, getApiUrl } from '../lib/utils';
 import { useAuth, defaultLocalUser } from '../App';
 import { User } from '../types';
 
@@ -54,7 +54,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
     setErrorMessage('');
     
     try {
-      const res = await fetch('/api/auth/send-passcode', {
+      const res = await fetch(getApiUrl('/api/auth/send-passcode'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emailOrPhone: inputValue })
@@ -83,7 +83,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
     setErrorMessage('');
 
     try {
-      const res = await fetch('/api/auth/verify-passcode', {
+      const res = await fetch(getApiUrl('/api/auth/verify-passcode'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emailOrPhone: inputValue, code: typedOtp })
@@ -117,7 +117,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
     setErrorMessage('');
     
     try {
-      const res = await fetch('/api/auth/send-passcode', {
+      const res = await fetch(getApiUrl('/api/auth/send-passcode'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emailOrPhone: inputValue })
@@ -166,12 +166,12 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
     setErrorMessage('');
     try {
       const demoEmail = 'ravi@barterhub.in';
-      await fetch('/api/auth/send-passcode', {
+      await fetch(getApiUrl('/api/auth/send-passcode'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emailOrPhone: demoEmail })
       });
-      const res = await fetch('/api/auth/verify-passcode', {
+      const res = await fetch(getApiUrl('/api/auth/verify-passcode'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emailOrPhone: demoEmail, code: '123456' })
@@ -495,7 +495,7 @@ export const OnboardingPage = () => {
     const token = localStorage.getItem('barter_user_token');
 
     try {
-      const res = await fetch('/api/auth/onboarding', {
+      const res = await fetch(getApiUrl('/api/auth/onboarding'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
