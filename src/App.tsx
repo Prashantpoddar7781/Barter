@@ -1058,7 +1058,7 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
           {/* Make Offer Button */}
           <button 
             onClick={(e) => { e.stopPropagation(); navigate(`/offer/${listing.id}`); }}
-            className="flex-1.5 py-3 bg-brand-primary text-white rounded-[14px] font-bold text-[10px] uppercase tracking-wider shadow-sm transition-all active:scale-95 cursor-pointer text-center"
+            className="flex-1 py-3 bg-brand-primary text-white rounded-[14px] font-bold text-[10px] uppercase tracking-wider shadow-sm transition-all active:scale-95 cursor-pointer text-center"
           >
             Make Offer
           </button>
