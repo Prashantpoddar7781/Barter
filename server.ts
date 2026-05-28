@@ -28,8 +28,26 @@ const transporter = smtpHost && smtpUser && smtpPass ? nodemailer.createTranspor
   auth: {
     user: smtpUser,
     pass: smtpPass
+  },
+  connectionTimeout: 10000, // 10 seconds connection timeout
+  socketTimeout: 10000,     // 10 seconds socket timeout
+  greetingTimeout: 10000,   // 10 seconds greeting timeout
+  tls: {
+    rejectUnauthorized: false // bypass SSL verification issues for custom domain/gmail servers
   }
 }) : null;
+
+if (transporter) {
+  transporter.verify((error, success) => {
+    if (error) {
+      console.error("[SMTP] Connection verification failed:", error);
+    } else {
+      console.log("[SMTP] Connection verified successfully! Transporter is ready.");
+    }
+  });
+} else {
+  console.log("[SMTP] SMTP host credentials not found. Sandbox mode active.");
+}
 
 // Initialize Prisma
 const prisma = new PrismaClient();
