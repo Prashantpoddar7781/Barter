@@ -43,8 +43,48 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
     setTimeout(() => setSuccessToast(''), 3000);
   };
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'password' | 'otp' | 'forgot'>('password');
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!inputValue.trim()) {
+      setErrorMessage(loginMethod === 'email' ? 'Please enter email address' : 'Please enter phone number');
+      return;
+    }
+    if (!password.trim()) {
+      setErrorMessage('Please enter password');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const res = await fetch(getApiUrl('/api/auth/login-password'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailOrPhone: inputValue, password: password.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Password login failed');
+
+      localStorage.setItem('barter_user_token', data.token);
+      setAuthUser(data.user);
+
+      setIsLoading(false);
+      triggerToast('Logged in successfully! 🚀');
+      if (onSuccess) onSuccess();
+      navigate(redirect);
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage(err.message || 'Login failed. Please check credentials.');
+    }
+  };
+
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!inputValue.trim()) {
       setErrorMessage(loginMethod === 'email' ? 'Please enter a valid email address' : 'Please enter your phone number');
       return;
@@ -64,7 +104,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
       
       setIsLoading(false);
       setOtpSent(true);
-      triggerToast(`Passcode sent successfully! Please check your ${loginMethod}. 🔑`);
+      triggerToast(`Passcode sent! Check your ${loginMethod}. 🔑`);
     } catch (err: any) {
       setIsLoading(false);
       setErrorMessage(err.message || 'Could not send passcode. Please try again.');
@@ -108,35 +148,67 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!inputValue.trim() || loginMethod !== 'email') {
-      setErrorMessage('Please enter your email address to reset password/retrieve secure OTP code');
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const typedOtp = otpCode.join('');
+    if (typedOtp.length < 6) {
+      setErrorMessage('Please enter the 6-digit OTP code');
       return;
     }
+    if (!newPassword.trim()) {
+      setErrorMessage('Please enter a new password');
+      return;
+    }
+    if (newPassword.trim().length < 6) {
+      setErrorMessage('Password must be at least 6 characters');
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage('');
-    
+
     try {
-      const res = await fetch(getApiUrl('/api/auth/send-passcode'), {
+      const res = await fetch(getApiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrPhone: inputValue })
+        body: JSON.stringify({ 
+          emailOrPhone: inputValue, 
+          code: typedOtp, 
+          newPassword: newPassword.trim() 
+        })
       });
-      if (!res.ok) throw new Error('Failed to send code');
-      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Password reset failed');
+
+      localStorage.setItem('barter_user_token', data.token);
+      setAuthUser(data.user);
+
       setIsLoading(false);
-      setOtpSent(true);
-      triggerToast(`Dynamic OTP recovery passcode pushed straight to ${inputValue}! 📪`);
+      triggerToast('Password reset successfully! 🔑');
+      if (onSuccess) onSuccess();
+
+      if (data.isNewUser) {
+        navigate('/onboarding');
+      } else {
+        navigate(redirect);
+      }
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage('Failed to send passcode. Try again.');
+      setErrorMessage(err.message || 'Failed to reset password. Try again.');
     }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!inputValue.trim()) {
+      setErrorMessage(loginMethod === 'email' ? 'Please enter your email to request recovery OTP' : 'Please enter your phone number');
+      return;
+    }
+    setAuthMode('forgot');
+    await handleSendOtp();
   };
 
   const handleOtpChange = (index: number, val: string) => {
     const cleaned = val.replace(/[^0-9]/g, '');
-    if (!cleaned) return;
-    
     const newOtp = [...otpCode];
     newOtp[index] = cleaned.substring(cleaned.length - 1);
     setOtpCode(newOtp);
@@ -216,19 +288,25 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
             <span className="font-display font-black text-3xl">B</span>
           </div>
           <h1 className="text-3xl font-display font-black tracking-tight text-text-charcoal">BarterHub</h1>
-          <p className="text-xs text-text-charcoal/50 max-w-[240px] mx-auto font-medium">Verify your identity instantly using simple secure passcode login.</p>
+          <p className="text-xs text-text-charcoal/50 max-w-[240px] mx-auto font-medium">
+            {authMode === 'password' 
+              ? 'Sign in using your account credentials.' 
+              : authMode === 'otp' 
+                ? 'Sign in via one-time secure passcode.' 
+                : 'Reset your password using email OTP.'}
+          </p>
         </div>
 
         {/* Outer Form Box Segment */}
-        {!otpSent ? (
-          <form onSubmit={handleSendOtp} className="space-y-6">
+        {authMode === 'password' ? (
+          <form onSubmit={handlePasswordLogin} className="space-y-5">
             {/* Login Toggle Select Tabs */}
             <div className="flex bg-surface-beige p-1 rounded-2xl border border-border-sleek">
               <button
                 type="button"
                 onClick={() => { setLoginMethod('email'); setInputValue(''); setErrorMessage(''); }}
                 className={cn(
-                  "flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                  "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
                   loginMethod === 'email' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
                 )}
               >
@@ -238,7 +316,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
                 type="button"
                 onClick={() => { setLoginMethod('phone'); setInputValue(''); setErrorMessage(''); }}
                 className={cn(
-                  "flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                  "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
                   loginMethod === 'phone' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
                 )}
               >
@@ -246,10 +324,10 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
               </button>
             </div>
 
-            {/* Credential Ingestion */}
+            {/* Email / Mobile Input */}
             <div className="space-y-1.5">
               <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">
-                {loginMethod === 'email' ? 'Enter Email Address' : 'Enter Mobile Contact'}
+                {loginMethod === 'email' ? 'Email Address' : 'Mobile Contact'}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-4 flex items-center text-text-charcoal/30">
@@ -263,9 +341,23 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
                   className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all"
                 />
               </div>
-              <p className="text-[9px] text-text-charcoal/40 italic">
-                *Tip: Enter <span className="underline">new@barterhub.in</span> or any new phone number to explore the first-time profile onboarding wizard!
-              </p>
+            </div>
+
+            {/* Password Input */}
+            <div className="space-y-1.5">
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">Password</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center text-text-charcoal/30">
+                  <Lock size={18} />
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all"
+                />
+              </div>
             </div>
 
             {errorMessage && (
@@ -274,7 +366,87 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
               </p>
             )}
 
-            {/* Control Triggers */}
+            {/* Actions */}
+            <div className="space-y-3.5 pt-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-brand-primary text-white font-black uppercase tracking-wider text-xs py-4.5 rounded-[22px] shadow-lg shadow-brand-primary/10 flex items-center justify-center gap-2 hover:bg-brand-primary/95 transition-all cursor-pointer active:scale-98 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                  <>Sign In</>
+                )}
+              </button>
+
+              <div className="flex justify-between items-center px-1">
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode('otp'); setInputValue(''); setPassword(''); setErrorMessage(''); }}
+                  className="text-[9.5px] font-black uppercase tracking-wider text-brand-primary hover:underline"
+                >
+                  Verify Code / Sign Up
+                </button>
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="text-[9.5px] font-black uppercase tracking-wider text-text-charcoal/40 hover:underline"
+                >
+                  Forgot Password?
+                </button>
+              </div>
+            </div>
+          </form>
+        ) : !otpSent ? (
+          <form onSubmit={handleSendOtp} className="space-y-6">
+            <div className="flex bg-surface-beige p-1 rounded-2xl border border-border-sleek">
+              <button
+                type="button"
+                onClick={() => { setLoginMethod('email'); setInputValue(''); setErrorMessage(''); }}
+                className={cn(
+                  "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                  loginMethod === 'email' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+                )}
+              >
+                Email Mode
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLoginMethod('phone'); setInputValue(''); setErrorMessage(''); }}
+                className={cn(
+                  "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                  loginMethod === 'phone' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+                )}
+              >
+                Mobile Mode
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">
+                {authMode === 'forgot' ? 'Send Reset OTP To' : 'Enter Email Address'}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center text-text-charcoal/30">
+                  {loginMethod === 'email' ? <Mail size={18} /> : <Phone size={18} />}
+                </div>
+                <input
+                  type={loginMethod === 'email' ? 'email' : 'tel'}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={loginMethod === 'email' ? 'ravi@barterhub.in' : '+91 98765 43210'}
+                  className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all"
+                />
+              </div>
+            </div>
+
+            {errorMessage && (
+              <p className="text-red-500 font-bold text-xs bg-red-50/50 p-3 rounded-xl border border-red-100 flex items-center gap-1.5 animate-pulse">
+                ⚠️ {errorMessage}
+              </p>
+            )}
+
             <div className="space-y-3">
               <button
                 type="submit"
@@ -284,21 +456,91 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
                 {isLoading ? (
                   <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
                 ) : (
-                  <>
-                    Send verification passcode <ArrowRight size={15} />
-                  </>
+                  <>Send verification passcode <ArrowRight size={15} /></>
                 )}
               </button>
 
-              {loginMethod === 'email' && (
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  className="w-full text-center text-[10px] font-black uppercase tracking-widest text-[#06b6d4] hover:underline"
-                >
-                  Forgot Password? Get Recovery OTP
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => { setAuthMode('password'); setInputValue(''); setErrorMessage(''); }}
+                className="w-full text-center text-[10px] font-black uppercase tracking-widest text-text-charcoal/40 hover:underline"
+              >
+                Back to Password Login
+              </button>
+            </div>
+          </form>
+        ) : authMode === 'forgot' ? (
+          <form onSubmit={handleResetPasswordSubmit} className="space-y-6">
+            <div className="space-y-2 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-brand-accent text-brand-primary flex items-center justify-center mx-auto mb-2">
+                <Lock size={20} />
+              </div>
+              <h2 className="text-xl font-display font-black text-text-charcoal">Reset Password</h2>
+              <p className="text-xs text-text-charcoal/50 max-w-[250px] mx-auto">
+                Enter the passcode received on your email and choose a new password:
+              </p>
+            </div>
+
+            {/* OTP Inputs */}
+            <div className="flex justify-between gap-1.5">
+              {otpCode.map((char, idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => { otpInputsRef.current[idx] = el; }}
+                  type="text"
+                  maxLength={1}
+                  value={char}
+                  onChange={(e) => handleOtpChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                  placeholder="•"
+                  className="w-12 h-14 bg-surface-beige border border-border-sleek focus:border-brand-primary rounded-xl text-center text-lg font-black text-brand-primary focus:outline-none focus:ring-4 focus:ring-brand-primary/10 transition-all placeholder:text-text-charcoal/10"
+                />
+              ))}
+            </div>
+
+            {/* New Password Input */}
+            <div className="space-y-1.5">
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">New Password</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center text-text-charcoal/30">
+                  <Lock size={18} />
+                </div>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min 6 characters"
+                  className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all"
+                />
+              </div>
+            </div>
+
+            {errorMessage && (
+              <p className="text-red-500 font-bold text-xs bg-red-50/50 p-3 rounded-xl border border-red-100 animate-pulse">
+                ⚠️ {errorMessage}
+              </p>
+            )}
+
+            <div className="space-y-3">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-brand-primary text-white font-black uppercase tracking-wider text-xs py-4.5 rounded-[22px] shadow-lg flex items-center justify-center gap-2 hover:bg-brand-primary/95 transition-all cursor-pointer active:scale-98 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                  <>Reset Password & Login</>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setOtpSent(false); setAuthMode('password'); setOtpCode(['','','','','','']); }}
+                className="w-full text-center text-[10px] font-black uppercase tracking-widest text-text-charcoal/40 hover:underline"
+              >
+                Cancel & Back
+              </button>
             </div>
           </form>
         ) : (
@@ -309,23 +551,8 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
               </div>
               <h2 className="text-xl font-display font-black text-text-charcoal">Security Passcode</h2>
               <p className="text-xs text-text-charcoal/50 max-w-[250px] mx-auto">
-                Testing sandbox active! Enter <span className="font-bold text-brand-primary">any 6 digits</span> below, or use the quick helper:
+                Secure OTP code sent! Enter the 6 digits below:
               </p>
-            </div>
-
-            {/* Quick Auto-fill Assist Button for testing */}
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setOtpCode(['1', '2', '3', '4', '5', '6']);
-                  setErrorMessage('');
-                  triggerToast('Pre-filled passcode key 123456! ⚡');
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-accent text-brand-primary text-[10px] font-black uppercase tracking-wider rounded-xl border border-brand-primary/10 hover:bg-brand-primary hover:text-white transition-all cursor-pointer"
-              >
-                <Sparkles size={11} /> Auto-fill Sandbox Passcode (123456)
-              </button>
             </div>
 
             {/* OTP Input Fields */}
@@ -415,6 +642,7 @@ export const OnboardingPage = () => {
   
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
   const [avatar, setAvatar] = useState('https://api.dicebear.com/7.x/avataaars/svg?seed=Lucky');
   const [location, setLocation] = useState('Surat, Gujarat');
   const [customCity, setCustomCity] = useState('');
@@ -474,9 +702,15 @@ export const OnboardingPage = () => {
   };
 
   const handleStepNext = () => {
-    if (step === 1 && !name.trim()) {
-      alert("Please provide your display name.");
-      return;
+    if (step === 1) {
+      if (!name.trim()) {
+        alert("Please provide your display name.");
+        return;
+      }
+      if (password.trim() && password.trim().length < 6) {
+        alert("Password must be at least 6 characters.");
+        return;
+      }
     }
     setStep(prev => prev + 1);
   };
@@ -505,7 +739,8 @@ export const OnboardingPage = () => {
           name: name.trim(),
           avatar,
           location: finalLocation,
-          interests: selectedInterests
+          interests: selectedInterests,
+          password: password.trim()
         })
       });
       const data = await res.json();
@@ -598,6 +833,23 @@ export const OnboardingPage = () => {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="E.g., Ravi Kumar"
+                    className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all font-sans"
+                  />
+                </div>
+              </div>
+
+              {/* Choose Password Input */}
+              <div className="space-y-1.5">
+                <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">Choose Password</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-4 flex items-center text-text-charcoal/35">
+                    <Lock size={18} />
+                  </div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Min 6 characters (Optional)"
                     className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all font-sans"
                   />
                 </div>

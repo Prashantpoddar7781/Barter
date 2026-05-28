@@ -5,12 +5,31 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { PrismaClient } from "@prisma/client";
 import jwt from "jsonwebtoken";
+import nodemailer from "nodemailer";
+import bcrypt from "bcryptjs";
 
 dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || "barterhub-secret-key-2026";
+
+// Initialize Nodemailer Transporter
+const smtpHost = process.env.SMTP_HOST || "";
+const smtpPort = Number(process.env.SMTP_PORT || 587);
+const smtpUser = process.env.SMTP_USER || "";
+const smtpPass = process.env.SMTP_PASS || "";
+const smtpFrom = process.env.SMTP_FROM || '"BarterHub" <noreply@barterhub.in>';
+
+const transporter = smtpHost && smtpUser && smtpPass ? nodemailer.createTransport({
+  host: smtpHost,
+  port: smtpPort,
+  secure: smtpPort === 465,
+  auth: {
+    user: smtpUser,
+    pass: smtpPass
+  }
+}) : null;
 
 // Initialize Prisma
 const prisma = new PrismaClient();
@@ -104,7 +123,7 @@ function getFallbackBarterIntelligence(title: string, category: string, value: n
 
 // ================= AUTH ENDPOINTS =================
 
-// POST /api/auth/send-passcode - Generate and save a 6-digit passcode
+// POST /api/auth/send-passcode - Generate and save a 6-digit passcode (and send via email)
 app.post("/api/auth/send-passcode", async (req, res) => {
   try {
     const { emailOrPhone } = req.body;
@@ -114,8 +133,8 @@ app.post("/api/auth/send-passcode", async (req, res) => {
 
     const cleanInput = String(emailOrPhone).trim().toLowerCase();
     
-    // Generate code (accept 123456 or generate random code)
-    const code = "123456"; // Fixed code for sandbox ease, but we save it in database
+    // Generate a random 6-digit code, or fallback to 123456 for sandbox testing if SMTP is not configured
+    const code = transporter ? Math.floor(100000 + Math.random() * 900000).toString() : "123456";
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
     await prisma.passcode.upsert({
@@ -124,7 +143,36 @@ app.post("/api/auth/send-passcode", async (req, res) => {
       create: { emailOrPhone: cleanInput, code, expiresAt }
     });
 
-    console.log(`[PASSCODE] Sent passcode ${code} to ${cleanInput}`);
+    console.log(`[PASSCODE] Generated passcode ${code} for ${cleanInput}`);
+
+    // If SMTP is configured and user input is an email, send actual email
+    if (transporter && cleanInput.includes("@")) {
+      const mailOptions = {
+        from: smtpFrom,
+        to: cleanInput,
+        subject: "Your BarterHub OTP Verification Code",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e5e5df; border-radius: 16px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <span style="font-size: 28px; font-weight: bold; color: #2D6A4F;">BarterHub</span>
+            </div>
+            <h2 style="color: #2d2d2d; margin-bottom: 12px; text-align: center;">Verification Passcode</h2>
+            <p style="font-size: 14px; color: #666; line-height: 1.6; text-align: center;">
+              Use the secure passcode below to complete your sign-in or verify your email:
+            </p>
+            <div style="background-color: #F5F5F0; padding: 18px; border-radius: 12px; margin: 24px 0; text-align: center;">
+              <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #2D6A4F; font-family: monospace;">${code}</span>
+            </div>
+            <p style="font-size: 11px; color: #999; text-align: center;">
+              This code will expire in 10 minutes. If you did not request this code, please ignore this email.
+            </p>
+          </div>
+        `
+      };
+      await transporter.sendMail(mailOptions);
+      console.log(`[PASSCODE] Successfully sent email OTP to ${cleanInput}`);
+    }
+
     res.json({ success: true, message: "Verification passcode sent successfully." });
   } catch (error: any) {
     console.error("Send passcode error:", error);
@@ -147,8 +195,12 @@ app.post("/api/auth/verify-passcode", async (req, res) => {
       where: { emailOrPhone: cleanInput }
     });
 
-    if (!passcodeRecord || passcodeRecord.code !== String(code) || passcodeRecord.expiresAt < new Date()) {
-      return res.status(400).json({ error: "Invalid or expired passcode. Try 123456." });
+    // Accept local fallback 123456 only if SMTP is not configured
+    const isValidSandbox = !transporter && String(code) === "123456";
+    const isValidRecord = passcodeRecord && passcodeRecord.code === String(code) && passcodeRecord.expiresAt >= new Date();
+
+    if (!isValidSandbox && !isValidRecord) {
+      return res.status(400).json({ error: "Invalid or expired passcode. Check your email or try again." });
     }
 
     // Passcode valid, delete it
@@ -187,6 +239,114 @@ app.post("/api/auth/verify-passcode", async (req, res) => {
   }
 });
 
+// POST /api/auth/login-password - Standard password authentication
+app.post("/api/auth/login-password", async (req, res) => {
+  try {
+    const { emailOrPhone, password } = req.body;
+    if (!emailOrPhone || !password) {
+      return res.status(400).json({ error: "Email/phone and password are required" });
+    }
+
+    const cleanInput = String(emailOrPhone).trim().toLowerCase();
+
+    // Find User
+    const user = await prisma.user.findUnique({
+      where: { emailOrPhone: cleanInput }
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: "No user account exists for this email/phone number. Verify via OTP first." });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({ error: "No password has been set for this account yet. Please use 'Forgot Password / Reset with OTP' to set a password." });
+    }
+
+    // Verify Password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(400).json({ error: "Incorrect password. Please try again or use OTP." });
+    }
+
+    // Sign Token
+    const token = jwt.sign({ id: user.id, emailOrPhone: user.emailOrPhone }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({
+      token,
+      user,
+      isNewUser: !user.isOnboardingCompleted
+    });
+  } catch (error: any) {
+    console.error("Login password error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/auth/reset-password - Verify OTP and update user password
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { emailOrPhone, code, newPassword } = req.body;
+    if (!emailOrPhone || !code || !newPassword) {
+      return res.status(400).json({ error: "Email/phone, OTP passcode, and new password are required" });
+    }
+
+    const cleanInput = String(emailOrPhone).trim().toLowerCase();
+
+    // Check passcode in DB
+    const passcodeRecord = await prisma.passcode.findUnique({
+      where: { emailOrPhone: cleanInput }
+    });
+
+    const isValidSandbox = !transporter && String(code) === "123456";
+    const isValidRecord = passcodeRecord && passcodeRecord.code === String(code) && passcodeRecord.expiresAt >= new Date();
+
+    if (!isValidSandbox && !isValidRecord) {
+      return res.status(400).json({ error: "Invalid or expired OTP passcode." });
+    }
+
+    // Passcode valid, delete it
+    await prisma.passcode.delete({
+      where: { emailOrPhone: cleanInput }
+    }).catch(() => {});
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(String(newPassword).trim(), 10);
+
+    // Find or create User
+    let user = await prisma.user.findUnique({
+      where: { emailOrPhone: cleanInput }
+    });
+
+    if (user) {
+      user = await prisma.user.update({
+        where: { emailOrPhone: cleanInput },
+        data: { password: hashedPassword }
+      });
+    } else {
+      user = await prisma.user.create({
+        data: {
+          emailOrPhone: cleanInput,
+          password: hashedPassword,
+          avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanInput)}`,
+          isOnboardingCompleted: false
+        }
+      });
+    }
+
+    // Sign Token
+    const token = jwt.sign({ id: user.id, emailOrPhone: user.emailOrPhone }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({
+      token,
+      user,
+      isNewUser: !user.isOnboardingCompleted
+    });
+  } catch (error: any) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/auth/me - Get current user profile
 app.get("/api/auth/me", authenticateToken, async (req: AuthRequest, res) => {
   try {
@@ -208,20 +368,26 @@ app.get("/api/auth/me", authenticateToken, async (req: AuthRequest, res) => {
 // POST /api/auth/onboarding - Complete profile setup
 app.post("/api/auth/onboarding", authenticateToken, async (req: AuthRequest, res) => {
   try {
-    const { name, avatar, location, interests } = req.body;
+    const { name, avatar, location, interests, password } = req.body;
     if (!name || !location) {
       return res.status(400).json({ error: "Name and location are required" });
     }
 
+    const updateData: any = {
+      name: name.trim(),
+      avatar: avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
+      location: location.trim(),
+      interests: interests || [],
+      isOnboardingCompleted: true
+    };
+
+    if (password && password.trim()) {
+      updateData.password = await bcrypt.hash(password.trim(), 10);
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: req.user?.id },
-      data: {
-        name: name.trim(),
-        avatar: avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
-        location: location.trim(),
-        interests: interests || [],
-        isOnboardingCompleted: true
-      }
+      data: updateData
     });
 
     res.json(updatedUser);

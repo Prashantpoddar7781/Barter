@@ -13,6 +13,7 @@ model User {
   id                    String    @id @default(cuid())
   name                  String?
   emailOrPhone          String    @unique
+  password              String?   // Hashed password for standard login
   avatar                String    @default("https://api.dicebear.com/7.x/initials/svg?seed=BH")
   location              String    @default("Surat, Gujarat")
   rating                Float     @default(4.8)

@@ -802,8 +802,8 @@ const DiscoverPage = () => {
         )}
       </AnimatePresence>
 
-      {/* Feed */}
-      <div className="px-3.5 py-4 grid grid-cols-2 gap-3.5 pb-28">
+      {/* Feed - Instagram Style */}
+      <div className="w-full space-y-4 pb-28 pt-2">
         {sortedAndFilteredListings.length > 0 ? (
           sortedAndFilteredListings.map((listing) => (
             <ListingCard key={listing.id} listing={listing} />
@@ -939,6 +939,7 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
   const navigate = useNavigate();
   const [activeUser] = useAuth();
   const user = getActiveUserById(listing.userId);
+  const [isLiked, setIsLiked] = useState(false);
 
   const minVal = Math.round(listing.estimatedValue * 0.85);
   const maxVal = Math.round(listing.estimatedValue * 1.15);
@@ -949,80 +950,124 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
     score = (score + listing.title.charCodeAt(i)) % 31 + 65;
   }
 
+  const handleLike = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsLiked(!isLiked);
+  };
+
   return (
     <motion.div 
-      whileTap={{ scale: 0.97 }}
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white border-y border-slate-100/90 sm:border sm:rounded-[24px] overflow-hidden flex flex-col shadow-[0_2px_12px_rgba(0,0,0,0.01)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.02)] transition-all cursor-pointer"
       onClick={() => navigate(`/listing/${listing.id}`)}
-      className="bg-white border border-slate-100/90 rounded-[24px] p-2 flex flex-col shadow-[0_2px_12px_rgba(0,0,0,0.015)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 transition-all overflow-hidden cursor-pointer"
     >
-      <div className="relative aspect-[4/5] w-full rounded-[18px] overflow-hidden bg-slate-50">
+      {/* 1. Post Header Row */}
+      <div className="flex items-center justify-between p-3.5 px-4 bg-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-full bg-brand-accent p-0.5 border border-brand-primary/10 overflow-hidden flex-shrink-0 shadow-sm flex items-center justify-center">
+            {user?.avatar ? (
+              <img src={user.avatar} alt={user.name} className="w-full h-full object-cover rounded-full" />
+            ) : (
+              <span className="font-display font-black text-brand-primary text-[10px]">
+                {user?.name.split(' ').map(n => n[0]).join('')}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col text-left min-w-0 leading-tight">
+            <span className="text-[11.5px] font-black text-text-charcoal truncate flex items-center gap-0.5">
+              {user?.name || 'User'}
+              {user?.idVerified && (
+                <ShieldCheck size={11} className="text-brand-secondary fill-brand-secondary/10 flex-shrink-0" />
+              )}
+            </span>
+            <span className="text-[9.5px] text-text-charcoal/40 font-semibold truncate flex items-center gap-1 mt-0.5">
+              <MapPin size={9} className="text-text-charcoal/30" /> {listing.location} • {listing.distance}
+            </span>
+          </div>
+        </div>
+        <button className="text-text-charcoal/45 hover:text-text-charcoal p-1 rounded-full cursor-pointer">
+          <MoreVertical size={16} />
+        </button>
+      </div>
+
+      {/* 2. Media Container */}
+      <div className="relative aspect-[4/5] w-full bg-slate-50 overflow-hidden">
         {isVideoUrl(listing.images[0]) ? (
           <video src={getCleanMediaUrl(listing.images[0])} className="w-full h-full object-cover" muted autoPlay loop playsInline />
         ) : (
-          <img src={getCleanMediaUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover" />
+          <img src={getCleanMediaUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover hover:scale-101 transition-transform duration-500" />
         )}
-        <div className="absolute top-2 left-2 right-2 flex justify-between items-center z-10">
-          <span className="px-2 py-0.5 bg-black/40 backdrop-blur-md text-white text-[8px] font-extrabold uppercase rounded-full">
+        
+        {/* Dynamic Category Overlay Pill */}
+        <div className="absolute top-3 left-4 flex gap-1.5 z-10">
+          <span className="px-2.5 py-1 bg-black/45 backdrop-blur-md text-white text-[8px] font-extrabold uppercase rounded-full tracking-wider">
             {listing.condition || 'Verified'}
           </span>
-          <span className="px-1.5 py-0.5 bg-emerald-500 text-white text-[8.5px] font-black uppercase rounded-full flex items-center gap-0.5 shadow-sm">
-            <Sparkles size={8} className="fill-current text-white animate-pulse" />
-            {score}%
+          <span className="px-2.5 py-1 bg-brand-primary/80 backdrop-blur-md text-brand-accent text-[8px] font-extrabold uppercase rounded-full tracking-wider">
+            {listing.isService ? '💼 Service' : '📦 Goods'}
           </span>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/70 via-black/30 to-transparent flex items-end p-2.5">
-          <div className="w-full flex justify-between items-center">
-            <span className="text-[10px] font-black text-brand-accent bg-brand-primary px-2 py-0.5 rounded-lg shadow-sm">
-              ₹{listing.estimatedValue >= 1000 ? `${(listing.estimatedValue / 1000).toFixed(0)}k` : listing.estimatedValue}
-            </span>
-            <span className="text-[7.5px] font-black tracking-wider uppercase text-white/90 bg-white/10 backdrop-blur-md px-1.5 py-0.5 rounded-full">
-              {listing.isService ? '💼 Service' : '📦 Goods'}
-            </span>
-          </div>
+        {/* Compatibility Score Overlay */}
+        <div className="absolute top-3 right-4 z-10">
+          <span className="px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black uppercase rounded-full flex items-center gap-0.5 shadow-sm border border-emerald-400/20">
+            <Sparkles size={9} className="fill-current text-white animate-pulse" />
+            {score}% Match
+          </span>
         </div>
       </div>
-      
-      <div className="p-2.5 pt-3 flex flex-col flex-1 min-w-0">
-        <h3 className="text-xs font-bold text-text-charcoal truncate leading-tight text-left mb-1.5">
-          {listing.title}
-        </h3>
 
-        {/* Wants section */}
-        <div className="flex items-center gap-1.5 text-[9px] text-text-charcoal/60 font-semibold mb-2.5">
-          <span className="text-emerald-700 bg-emerald-50 py-0.5 px-1.5 rounded-md font-bold uppercase text-[7.5px] tracking-wider border border-emerald-100/50 flex-shrink-0">
-            For
+      {/* 3. Action Bar (Instagram Icons Row) */}
+      <div className="flex items-center justify-between p-3.5 px-4 border-b border-slate-50 bg-white">
+        <div className="flex items-center gap-4.5">
+          <button 
+            onClick={handleLike}
+            className="text-text-charcoal hover:scale-110 active:scale-90 transition-all cursor-pointer bg-transparent border-none p-0"
+          >
+            <Heart size={21} className={cn(isLiked ? "fill-red-500 text-red-500" : "text-text-charcoal/80")} />
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); navigate('/chat', { state: { listing, recipient: user } }); }}
+            className="text-text-charcoal/80 hover:scale-110 active:scale-90 transition-all cursor-pointer bg-transparent border-none p-0"
+          >
+            <MessageCircle size={21} />
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); navigate(`/listing/${listing.id}`); }}
+            className="text-text-charcoal/80 hover:scale-110 active:scale-90 transition-all cursor-pointer bg-transparent border-none p-0"
+          >
+            <Repeat size={21} />
+          </button>
+        </div>
+        <span className="text-[11.5px] font-black text-brand-primary bg-brand-accent/50 px-2.5 py-0.5 rounded-lg select-none">
+          Est. Value: ₹{listing.estimatedValue.toLocaleString()}
+        </span>
+      </div>
+
+      {/* 4. Caption & Wants Details */}
+      <div className="p-4 pt-3 flex flex-col text-left bg-white">
+        {/* Caption Description */}
+        <p className="text-xs text-text-charcoal leading-relaxed font-medium">
+          <span className="font-black mr-1.5 text-text-charcoal">{user?.name.split(' ')[0]}</span>
+          <span className="font-extrabold text-[12.5px] text-text-charcoal block mt-0.5 font-display">{listing.title}</span>
+          <span className="text-text-charcoal/70 block mt-1 text-[11.5px]">{listing.description}</span>
+        </p>
+
+        {/* Trade Requirements (Wants) Caption Line */}
+        <div className="mt-3 flex items-start gap-1.5 bg-emerald-50/50 border border-emerald-100/50 p-2.5 rounded-xl">
+          <span className="text-emerald-700 font-extrabold uppercase text-[8px] tracking-wider bg-emerald-100 px-1.5 py-0.5 rounded-md flex-shrink-0 mt-0.5 select-none">
+            Looking For
           </span>
-          <span className="truncate flex-grow text-left font-medium text-text-charcoal/80">
-            {listing.wants.join(', ')}
+          <span className="text-xs font-semibold text-emerald-800 leading-normal">
+            {listing.wants.join(' • ')}
           </span>
         </div>
-
-        {/* Divider */}
-        <div className="border-t border-slate-50 mb-2"></div>
-
-        {/* User Info Row */}
-        <div className="flex items-center justify-between mt-auto">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <div className="w-5.5 h-5.5 rounded-full bg-brand-accent flex items-center justify-center font-display font-bold text-brand-primary text-[8px] overflow-hidden border border-white shadow-sm flex-shrink-0">
-              {user?.avatar ? (
-                <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
-              ) : (
-                <span>{user?.name.split(' ').map(n => n[0]).join('')}</span>
-              )}
-            </div>
-            <span className="text-[10px] font-bold text-text-charcoal truncate flex items-center gap-0.5">
-              {user?.name.split(' ')[0]}
-              {user?.idVerified && (
-                <ShieldCheck size={10} className="text-brand-secondary fill-brand-secondary/10" />
-              )}
-            </span>
-          </div>
-
-          <span className="text-[9px] text-text-charcoal/40 font-black uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0">
-            <MapPin size={8} /> {listing.distance.split(' ')[0]}
-          </span>
-        </div>
+        
+        {/* Date line */}
+        <span className="text-[8px] text-text-charcoal/30 uppercase font-black tracking-widest mt-3.5 select-none">
+          {new Date(listing.createdAt || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </span>
       </div>
     </motion.div>
   );
