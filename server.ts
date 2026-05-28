@@ -185,7 +185,11 @@ app.post("/api/auth/send-passcode", async (req, res) => {
 
     if (resendApiKey && cleanInput.includes("@")) {
       console.log(`[PASSCODE] Attempting to send Resend email API to ${cleanInput}`);
-      const fromEmail = smtpFrom.includes("onboarding@resend.dev") || !smtpFrom.includes("barterhub.in") ? smtpFrom : "BarterHub <onboarding@resend.dev>";
+      let fromEmail = "BarterHub <onboarding@resend.dev>";
+      // Only use custom SMTP_FROM if it's set and doesn't belong to a public email domain (Gmail, Yahoo, Outlook, etc.) which cannot be verified on Resend
+      if (smtpFrom && smtpFrom.includes("@") && !smtpFrom.includes("@gmail.com") && !smtpFrom.includes("@yahoo") && !smtpFrom.includes("@outlook") && !smtpFrom.includes("@hotmail") && !smtpFrom.includes("@icloud")) {
+        fromEmail = smtpFrom;
+      }
       
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
