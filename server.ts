@@ -151,8 +151,10 @@ app.post("/api/auth/send-passcode", async (req, res) => {
 
     const cleanInput = String(emailOrPhone).trim().toLowerCase();
     
-    // Generate a random 6-digit code, or fallback to 123456 for sandbox testing if SMTP is not configured
-    const code = transporter ? Math.floor(100000 + Math.random() * 900000).toString() : "123456";
+    // Generate a random 6-digit code, or fallback to 123456 for sandbox testing if no email service is configured
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const isRealMailConfigured = !!(transporter || resendApiKey);
+    const code = isRealMailConfigured ? Math.floor(100000 + Math.random() * 900000).toString() : "123456";
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
     await prisma.passcode.upsert({
@@ -163,32 +165,58 @@ app.post("/api/auth/send-passcode", async (req, res) => {
 
     console.log(`[PASSCODE] Generated passcode ${code} for ${cleanInput}`);
 
-    // If SMTP is configured and user input is an email, send actual email
-    if (transporter && cleanInput.includes("@")) {
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e5e5df; border-radius: 16px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <span style="font-size: 28px; font-weight: bold; color: #2D6A4F;">BarterHub</span>
+        </div>
+        <h2 style="color: #2d2d2d; margin-bottom: 12px; text-align: center;">Verification Passcode</h2>
+        <p style="font-size: 14px; color: #666; line-height: 1.6; text-align: center;">
+          Use the secure passcode below to complete your sign-in or verify your email:
+        </p>
+        <div style="background-color: #F5F5F0; padding: 18px; border-radius: 12px; margin: 24px 0; text-align: center;">
+          <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #2D6A4F; font-family: monospace;">${code}</span>
+        </div>
+        <p style="font-size: 11px; color: #999; text-align: center;">
+          This code will expire in 10 minutes. If you did not request this code, please ignore this email.
+        </p>
+      </div>
+    `;
+
+    if (resendApiKey && cleanInput.includes("@")) {
+      console.log(`[PASSCODE] Attempting to send Resend email API to ${cleanInput}`);
+      const fromEmail = smtpFrom.includes("onboarding@resend.dev") || !smtpFrom.includes("barterhub.in") ? smtpFrom : "BarterHub <onboarding@resend.dev>";
+      
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: cleanInput,
+          subject: "Your BarterHub OTP Verification Code",
+          html: emailHtml
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || `Resend API returned status ${response.status}`);
+      }
+      
+      console.log(`[PASSCODE] Successfully sent email OTP to ${cleanInput} via Resend HTTP API`);
+    } else if (transporter && cleanInput.includes("@")) {
+      console.log(`[PASSCODE] Attempting to send Nodemailer SMTP to ${cleanInput}`);
       const mailOptions = {
         from: smtpFrom,
         to: cleanInput,
         subject: "Your BarterHub OTP Verification Code",
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e5e5df; border-radius: 16px;">
-            <div style="text-align: center; margin-bottom: 24px;">
-              <span style="font-size: 28px; font-weight: bold; color: #2D6A4F;">BarterHub</span>
-            </div>
-            <h2 style="color: #2d2d2d; margin-bottom: 12px; text-align: center;">Verification Passcode</h2>
-            <p style="font-size: 14px; color: #666; line-height: 1.6; text-align: center;">
-              Use the secure passcode below to complete your sign-in or verify your email:
-            </p>
-            <div style="background-color: #F5F5F0; padding: 18px; border-radius: 12px; margin: 24px 0; text-align: center;">
-              <span style="font-size: 32px; font-weight: 800; letter-spacing: 6px; color: #2D6A4F; font-family: monospace;">${code}</span>
-            </div>
-            <p style="font-size: 11px; color: #999; text-align: center;">
-              This code will expire in 10 minutes. If you did not request this code, please ignore this email.
-            </p>
-          </div>
-        `
+        html: emailHtml
       };
       await transporter.sendMail(mailOptions);
-      console.log(`[PASSCODE] Successfully sent email OTP to ${cleanInput}`);
+      console.log(`[PASSCODE] Successfully sent email OTP to ${cleanInput} via SMTP`);
     }
 
     res.json({ success: true, message: "Verification passcode sent successfully." });
