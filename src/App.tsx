@@ -1018,35 +1018,8 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
         </div>
       </div>
 
-      {/* 3. Action Bar (Instagram Icons Row) */}
-      <div className="flex items-center justify-between p-3.5 px-4 border-b border-slate-50 bg-white">
-        <div className="flex items-center gap-4.5">
-          <button 
-            onClick={handleLike}
-            className="text-text-charcoal hover:scale-110 active:scale-90 transition-all cursor-pointer bg-transparent border-none p-0"
-          >
-            <Heart size={21} className={cn(isLiked ? "fill-red-500 text-red-500" : "text-text-charcoal/80")} />
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); navigate('/chat', { state: { listing, recipient: user } }); }}
-            className="text-text-charcoal/80 hover:scale-110 active:scale-90 transition-all cursor-pointer bg-transparent border-none p-0"
-          >
-            <MessageCircle size={21} />
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); navigate(`/listing/${listing.id}`); }}
-            className="text-text-charcoal/80 hover:scale-110 active:scale-90 transition-all cursor-pointer bg-transparent border-none p-0"
-          >
-            <Repeat size={21} />
-          </button>
-        </div>
-        <span className="text-[11.5px] font-black text-brand-primary bg-brand-accent/50 px-2.5 py-0.5 rounded-lg select-none">
-          Est. Value: ₹{listing.estimatedValue.toLocaleString()}
-        </span>
-      </div>
-
-      {/* 4. Caption & Wants Details */}
-      <div className="p-4 pt-3 flex flex-col text-left bg-white">
+      {/* 3. Action Section */}
+      <div className="p-4 pt-3.5 flex flex-col text-left bg-white border-t border-slate-50">
         {/* Caption Description */}
         <p className="text-xs text-text-charcoal leading-relaxed font-medium">
           <span className="font-black mr-1.5 text-text-charcoal">{user?.name.split(' ')[0]}</span>
@@ -1055,7 +1028,7 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
         </p>
 
         {/* Trade Requirements (Wants) Caption Line */}
-        <div className="mt-3 flex items-start gap-1.5 bg-emerald-50/50 border border-emerald-100/50 p-2.5 rounded-xl">
+        <div className="mt-3.5 flex items-start gap-1.5 bg-emerald-50/50 border border-emerald-100/50 p-2.5 rounded-xl">
           <span className="text-emerald-700 font-extrabold uppercase text-[8px] tracking-wider bg-emerald-100 px-1.5 py-0.5 rounded-md flex-shrink-0 mt-0.5 select-none">
             Looking For
           </span>
@@ -1063,11 +1036,43 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
             {listing.wants.join(' • ')}
           </span>
         </div>
+
+        {/* Action Buttons Row */}
+        <div className="flex items-center gap-2.5 mt-4">
+          {/* Like Heart Button */}
+          <button 
+            onClick={handleLike}
+            className="flex-shrink-0 w-10.5 h-10.5 border border-slate-200/90 rounded-[14px] flex items-center justify-center text-text-charcoal hover:scale-105 active:scale-95 transition-all cursor-pointer bg-white"
+          >
+            <Heart size={18} className={cn(isLiked ? "fill-red-500 text-red-500" : "text-text-charcoal/70")} />
+          </button>
+          
+          {/* Message Button */}
+          <button 
+            onClick={(e) => { e.stopPropagation(); navigate('/chat', { state: { listing, recipient: user } }); }}
+            className="flex-1 py-3 border border-slate-200/90 rounded-[14px] font-bold text-[10px] uppercase tracking-wider text-text-charcoal hover:bg-slate-50 transition-all active:scale-95 cursor-pointer text-center bg-white"
+          >
+            Message
+          </button>
+
+          {/* Make Offer Button */}
+          <button 
+            onClick={(e) => { e.stopPropagation(); navigate(`/offer/${listing.id}`); }}
+            className="flex-1.5 py-3 bg-brand-primary text-white rounded-[14px] font-bold text-[10px] uppercase tracking-wider shadow-sm transition-all active:scale-95 cursor-pointer text-center"
+          >
+            Make Offer
+          </button>
+        </div>
         
-        {/* Date line */}
-        <span className="text-[8px] text-text-charcoal/30 uppercase font-black tracking-widest mt-3.5 select-none">
-          {new Date(listing.createdAt || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-        </span>
+        {/* Estimated Value & Date footer */}
+        <div className="flex items-center justify-between mt-3.5 pt-3.5 border-t border-slate-100/50">
+          <span className="text-[10px] font-black text-brand-primary bg-brand-accent/50 px-2.5 py-0.5 rounded-lg select-none">
+            Est. Value: ₹{listing.estimatedValue.toLocaleString()}
+          </span>
+          <span className="text-[8px] text-text-charcoal/30 uppercase font-black tracking-widest select-none">
+            {new Date(listing.createdAt || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </span>
+        </div>
       </div>
     </motion.div>
   );
