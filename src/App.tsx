@@ -439,6 +439,42 @@ const DiscoverPage = () => {
     }
   };
 
+  const getListingIdFromNotification = (notif: any) => {
+    if (notif.listingId) return notif.listingId;
+    const msg = notif.message || '';
+    
+    // Fallback: search for double quotes match (e.g., "Web Development")
+    const matchDouble = msg.match(/"([^"]+)"/);
+    if (matchDouble && matchDouble[1]) {
+      const parsedTitle = matchDouble[1].toLowerCase().trim();
+      const found = listings.find(l => 
+        l.title.toLowerCase().includes(parsedTitle) || 
+        parsedTitle.includes(l.title.toLowerCase())
+      );
+      if (found) return found.id;
+    }
+    
+    // Fallback: search for single quotes match (e.g., 'DSLR Camera')
+    const matchSingle = msg.match(/'([^']+)'/);
+    if (matchSingle && matchSingle[1]) {
+      const parsedTitle = matchSingle[1].toLowerCase().trim();
+      const found = listings.find(l => 
+        l.title.toLowerCase().includes(parsedTitle) || 
+        parsedTitle.includes(l.title.toLowerCase())
+      );
+      if (found) return found.id;
+    }
+
+    // Fallback: search for any occurrence of listing title directly inside the text message
+    for (const l of listings) {
+      if (msg.toLowerCase().includes(l.title.toLowerCase())) {
+        return l.id;
+      }
+    }
+    
+    return null;
+  };
+
   const fetchWishlist = async () => {
     try {
       const res = await fetch(getApiUrl('/api/wishlist'));
@@ -1307,13 +1343,14 @@ const DiscoverPage = () => {
               {notifications.length > 0 ? (
                 <div className="space-y-3">
                   {notifications.map((notif: any) => {
-                    const hasLink = !!notif.listingId;
+                    const targetId = getListingIdFromNotification(notif);
+                    const hasLink = !!targetId;
                     return (
                       <div 
                         key={notif.id} 
                         onClick={() => {
                           if (hasLink) {
-                            navigate(`/listing/${notif.listingId}`);
+                            navigate(`/listing/${targetId}`);
                             setShowNotificationsModal(false);
                           }
                         }}
