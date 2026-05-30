@@ -764,9 +764,7 @@ app.post("/api/listings", authenticateToken, async (req: AuthRequest, res) => {
 
     // 4. Trigger Matching Notifications for Wishlists
     try {
-      const wishlists = await prisma.wishlistItem.findMany({
-        where: { category }
-      });
+      const wishlists = await prisma.wishlistItem.findMany();
       const matchedWishlist = wishlists.filter(item => 
         sanitizedTitle.toLowerCase().includes(item.title.toLowerCase()) || 
         item.title.toLowerCase().includes(sanitizedTitle.toLowerCase())
@@ -984,9 +982,7 @@ app.post("/api/wishlist", authenticateToken, async (req: AuthRequest, res) => {
     });
 
     // Scan for matches in existing listings
-    const listings = await prisma.listing.findMany({
-      where: { category }
-    });
+      const listings = await prisma.listing.findMany();
     const matchedListings = listings.filter(l => 
       sanitizedTitle.toLowerCase().includes(l.title.toLowerCase()) || 
       l.title.toLowerCase().includes(sanitizedTitle.toLowerCase())
