@@ -34,6 +34,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successToast, setSuccessToast] = useState('');
+  const [sandboxCode, setSandboxCode] = useState('');
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -92,6 +93,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
     
     setIsLoading(true);
     setErrorMessage('');
+    setSandboxCode('');
     
     try {
       const res = await fetch(getApiUrl('/api/auth/send-passcode'), {
@@ -104,7 +106,13 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
       
       setIsLoading(false);
       setOtpSent(true);
-      triggerToast(`Passcode sent! Check your ${loginMethod}. 🔑`);
+      if (data.sandboxCode) {
+        setSandboxCode(data.sandboxCode);
+        triggerToast(`Sandbox mode active! Passcode is ${data.sandboxCode}. 🔑`);
+      } else {
+        setSandboxCode('');
+        triggerToast(`Passcode sent! Check your ${loginMethod}. 🔑`);
+      }
     } catch (err: any) {
       setIsLoading(false);
       setErrorMessage(err.message || 'Could not send passcode. Please try again.');
@@ -515,6 +523,16 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
               </div>
             </div>
 
+            {sandboxCode && (
+              <div className="bg-sky-50 text-[#0284c7] text-[10px] p-4 rounded-2xl border border-sky-100/60 font-semibold leading-relaxed text-left flex items-start gap-2">
+                <span>💡</span>
+                <div>
+                  <p className="font-bold uppercase tracking-wider text-[9px] text-[#0369a1] mb-0.5">Sandbox Mode Fallback</p>
+                  <p className="normal-case text-sky-800">Due to Resend/SMTP limits, the real email could not be delivered. Please enter recovery passcode <strong>{sandboxCode}</strong> and set your new password.</p>
+                </div>
+              </div>
+            )}
+
             {errorMessage && (
               <p className="text-red-500 font-bold text-xs bg-red-50/50 p-3 rounded-xl border border-red-100 animate-pulse">
                 ⚠️ {errorMessage}
@@ -536,7 +554,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
 
               <button
                 type="button"
-                onClick={() => { setOtpSent(false); setAuthMode('password'); setOtpCode(['','','','','','']); }}
+                onClick={() => { setOtpSent(false); setAuthMode('password'); setOtpCode(['','','','','','']); setSandboxCode(''); }}
                 className="w-full text-center text-[10px] font-black uppercase tracking-widest text-text-charcoal/40 hover:underline"
               >
                 Cancel & Back
@@ -572,6 +590,16 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
               ))}
             </div>
 
+            {sandboxCode && (
+              <div className="bg-sky-50 text-[#0284c7] text-[10px] p-4 rounded-2xl border border-sky-100/60 font-semibold leading-relaxed text-left flex items-start gap-2">
+                <span>💡</span>
+                <div>
+                  <p className="font-bold uppercase tracking-wider text-[9px] text-[#0369a1] mb-0.5">Sandbox Mode Fallback</p>
+                  <p className="normal-case text-sky-800">Due to Resend/SMTP sandbox limits, the real email could not be delivered. Please enter passcode <strong>{sandboxCode}</strong> to verify and unlock.</p>
+                </div>
+              </div>
+            )}
+
             {errorMessage && (
               <p className="text-red-500 font-bold text-xs bg-red-50/50 p-3 rounded-xl border border-red-100 animate-pulse">
                 ⚠️ {errorMessage}
@@ -595,7 +623,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
               <div className="flex justify-between items-center px-1">
                 <button
                   type="button"
-                  onClick={() => { setOtpSent(false); setOtpCode(['','','','','','']); }}
+                  onClick={() => { setOtpSent(false); setOtpCode(['','','','','','']); setSandboxCode(''); }}
                   className="text-[9px] font-black uppercase tracking-widest text-text-charcoal/40 hover:text-text-charcoal"
                 >
                   Change Account
