@@ -40,6 +40,8 @@ export interface Listing {
   tags: string[];
   createdAt: string;
   isService: boolean;
+  isFlagged?: boolean;
+  isModerated?: boolean;
 }
 
 export type OfferStatus = 'pending' | 'accepted' | 'declined' | 'countered';

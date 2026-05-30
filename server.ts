@@ -52,6 +52,32 @@ if (transporter) {
 // Initialize Prisma
 const prisma = new PrismaClient();
 
+// ================= SAFETY & MODERATION HELPERS =================
+const PROFANITY_WORDS = ["abuse", "bastard", "idiot", "scammer", "fraudster", "harass", "fuck", "shit", "chutiya", "kamina", "saala"];
+const SUSPICIOUS_KEYWORDS = ["drugs", "weapons", "gun", "stolen", "wire transfer", "hack", "cheat code", "cheat cash", "illegal"];
+
+function filterProfanity(text: string): string {
+  if (!text) return "";
+  let sanitized = text;
+  for (const word of PROFANITY_WORDS) {
+    const regex = new RegExp(`\\b${word}\\b`, "gi");
+    sanitized = sanitized.replace(regex, "****");
+  }
+  return sanitized;
+}
+
+function containsSuspiciousKeywords(text: string): boolean {
+  if (!text) return false;
+  const lowerText = text.toLowerCase();
+  return SUSPICIOUS_KEYWORDS.some(word => lowerText.includes(word));
+}
+
+function checkImageModeration(images: any): boolean {
+  if (!images) return false;
+  const imgStr = JSON.stringify(images).toLowerCase();
+  return imgStr.includes("inappropriate") || imgStr.includes("flag") || imgStr.includes("unsafe") || imgStr.includes("nude");
+}
+
 // Initialize Gemini
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
@@ -592,6 +618,67 @@ app.get("/api/listings", async (req, res) => {
         ]
       });
 
+      // Seed mock wishlists
+      await prisma.wishlistItem.createMany({
+        data: [
+          {
+            id: "w1",
+            userId: priyaUser.id,
+            title: "DSLR Camera",
+            description: "Looking for a working DSLR camera for hobby photography.",
+            category: "Electronics",
+            estimatedValue: 30000,
+            location: "Surat, Gujarat"
+          },
+          {
+            id: "w2",
+            userId: arjunUser.id,
+            title: "Monstera plant",
+            description: "Looking for indoor monstera or other plants.",
+            category: "Other",
+            estimatedValue: 1200,
+            location: "Surat, Gujarat"
+          }
+        ]
+      }).catch(() => {});
+
+      // Seed mock trade records (profile history)
+      await prisma.tradeRecord.createMany({
+        data: [
+          {
+            id: "t1",
+            user1Id: "me",
+            user1Name: "Ravi Kumar",
+            user2Id: priyaUser.id,
+            user2Name: priyaUser.name || "Priya S.",
+            item1Title: "Aesthetic Writing Table Desk",
+            item2Title: "Monstera Plant (large) 🌿",
+            createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+          },
+          {
+            id: "t2",
+            user1Id: "me",
+            user1Name: "Ravi Kumar",
+            user2Id: arjunUser.id,
+            user2Name: arjunUser.name || "Arjun M.",
+            item1Title: "Gaming Console Retro Handheld",
+            item2Title: "Minimalist Brand Logo Vector Design",
+            createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000)
+          }
+        ]
+      }).catch(() => {});
+
+      // Seed a starter notification for matching
+      await prisma.notification.create({
+        data: {
+          id: "n1",
+          userId: "me",
+          title: "New Match! 🌟",
+          message: "Priya S. is looking for 'DSLR Camera' which matches your Canon 200D!",
+          type: "match"
+        }
+      }).catch(() => {});
+
       // Refetch
       listings = await prisma.listing.findMany({
         orderBy: { createdAt: 'desc' }
@@ -637,11 +724,22 @@ app.post("/api/listings", authenticateToken, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: "Title, estimatedValue, and images are required" });
     }
 
+    // 1. Safety & Moderation: Profanity filter
+    const sanitizedTitle = filterProfanity(title);
+    const rawDesc = description || `Exchange offer of ${title}`;
+    const sanitizedDesc = filterProfanity(rawDesc);
+
+    // 2. Banned Keyword Flagging
+    const isSuspicious = containsSuspiciousKeywords(sanitizedTitle) || containsSuspiciousKeywords(sanitizedDesc);
+
+    // 3. Image Moderation Check
+    const isUnsafeImage = checkImageModeration(images);
+
     const listing = await prisma.listing.create({
       data: {
         userId: req.user?.id!,
-        title,
-        description: description || `Exchange offer of ${title}`,
+        title: sanitizedTitle,
+        description: sanitizedDesc,
         images: images, // Prisma takes JSON directly
         category,
         condition: condition || (isService ? "Professional Skill" : "Excellent condition"),
@@ -652,9 +750,36 @@ app.post("/api/listings", authenticateToken, async (req: AuthRequest, res) => {
         openToNegotiate: !!openToNegotiate,
         negotiableCategories: negotiableCategories || [],
         tags: tags || [],
-        isService: !!isService
+        isService: !!isService,
+        isFlagged: isSuspicious,
+        isModerated: isUnsafeImage
       }
     });
+
+    // 4. Trigger Matching Notifications for Wishlists
+    try {
+      const wishlists = await prisma.wishlistItem.findMany({
+        where: { category }
+      });
+      const matchedWishlist = wishlists.filter(item => 
+        sanitizedTitle.toLowerCase().includes(item.title.toLowerCase()) || 
+        item.title.toLowerCase().includes(sanitizedTitle.toLowerCase())
+      );
+      for (const item of matchedWishlist) {
+        if (item.userId !== req.user?.id) {
+          await prisma.notification.create({
+            data: {
+              userId: item.userId,
+              title: "New Match Found! 🌟",
+              message: `Someone just listed "${sanitizedTitle}" which matches your wishlist item "${item.title}"!`,
+              type: "match"
+            }
+          });
+        }
+      }
+    } catch (matchErr) {
+      console.error("Match check error:", matchErr);
+    }
 
     res.status(201).json(listing);
   } catch (error: any) {
@@ -695,12 +820,15 @@ app.post("/api/messages", authenticateToken, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: "Receiver ID and message text are required" });
     }
 
+    // Sanitize message using profanity filter
+    const sanitizedText = filterProfanity(text);
+
     const message = await prisma.message.create({
       data: {
         senderId: req.user?.id!,
         receiverId,
         listingId: listingId || null,
-        text,
+        text: sanitizedText,
         timestamp: Number(Date.now())
       }
     });
@@ -811,6 +939,238 @@ app.post("/api/ai/match", async (req, res) => {
   } catch (error) {
     console.error("Gemini Error:", error);
     res.status(500).json({ error: "Failed to generate match score" });
+  }
+});
+
+// ================= WISHLIST ENDPOINTS =================
+app.get("/api/wishlist", async (req, res) => {
+  try {
+    const items = await prisma.wishlistItem.findMany({
+      include: { user: true },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(items);
+  } catch (error: any) {
+    console.error("Get wishlist error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/wishlist", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { title, description, category, estimatedValue, location } = req.body;
+    if (!title || !category || !estimatedValue) {
+      return res.status(400).json({ error: "Title, category, and expected value are required" });
+    }
+
+    const sanitizedTitle = filterProfanity(title);
+    const sanitizedDesc = filterProfanity(description || "");
+
+    const item = await prisma.wishlistItem.create({
+      data: {
+        userId: req.user?.id!,
+        title: sanitizedTitle,
+        description: sanitizedDesc,
+        category,
+        estimatedValue: Number(estimatedValue),
+        location: location || "Surat, Gujarat"
+      }
+    });
+
+    // Scan for matches in existing listings
+    const listings = await prisma.listing.findMany({
+      where: { category }
+    });
+    const matchedListings = listings.filter(l => 
+      sanitizedTitle.toLowerCase().includes(l.title.toLowerCase()) || 
+      l.title.toLowerCase().includes(sanitizedTitle.toLowerCase())
+    );
+    for (const l of matchedListings) {
+      if (l.userId !== req.user?.id) {
+        await prisma.notification.create({
+          data: {
+            userId: req.user?.id!,
+            title: "Wishlist Match Found!",
+            message: `An active listing "${l.title}" matches your new wishlist item "${sanitizedTitle}"!`,
+            type: "match"
+          }
+        });
+      }
+    }
+
+    res.status(201).json(item);
+  } catch (error: any) {
+    console.error("Create wishlist error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================= NOTIFICATION ENDPOINTS =================
+app.get("/api/notifications", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: { userId: req.user?.id! },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(notifications);
+  } catch (error: any) {
+    console.error("Get notifications error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/notifications/read", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    await prisma.notification.updateMany({
+      where: { userId: req.user?.id!, read: false },
+      data: { read: true }
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Read notifications error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================= REPORT ENDPOINTS =================
+app.post("/api/reports", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { targetType, targetId, reason, details } = req.body;
+    if (!targetType || !targetId || !reason) {
+      return res.status(400).json({ error: "Target type, target ID, and reason are required" });
+    }
+
+    const report = await prisma.report.create({
+      data: {
+        reporterId: req.user?.id!,
+        targetType,
+        targetId,
+        reason,
+        details: details || ""
+      }
+    });
+
+    if (targetType === "listing") {
+      await prisma.listing.update({
+        where: { id: targetId },
+        data: { isFlagged: true }
+      }).catch(() => {});
+    }
+
+    res.status(201).json(report);
+  } catch (error: any) {
+    console.error("Create report error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================= TRADE HISTORY ENDPOINTS =================
+app.get("/api/trades/history", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const records = await prisma.tradeRecord.findMany({
+      where: {
+        OR: [
+          { user1Id: req.user?.id! },
+          { user2Id: req.user?.id! }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(records);
+  } catch (error: any) {
+    console.error("Get trade history error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================= SWAP CIRCLE 3-WAY MATCHING =================
+app.get("/api/trades/circles", async (req, res) => {
+  try {
+    const listings = await prisma.listing.findMany({
+      include: { user: true }
+    });
+
+    const nodes = listings.map(l => ({
+      id: l.id,
+      userId: l.userId,
+      userName: l.user.name || "Anonymous",
+      userAvatar: l.user.avatar,
+      title: l.title,
+      category: l.category,
+      estimatedValue: l.estimatedValue,
+      images: typeof l.images === 'string' ? JSON.parse(l.images) : l.images,
+      wants: typeof l.wants === 'string' ? JSON.parse(l.wants) : l.wants
+    }));
+
+    const wantsItem = (nodeX: typeof nodes[0], nodeY: typeof nodes[0]) => {
+      const lowerTitle = nodeY.title.toLowerCase();
+      const lowerCategory = nodeY.category.toLowerCase();
+      return nodeX.wants.some(w => {
+        const lowerWant = w.toLowerCase();
+        return lowerTitle.includes(lowerWant) || lowerCategory.includes(lowerWant) || lowerWant.includes(lowerTitle) || lowerWant.includes(lowerCategory);
+      });
+    };
+
+    const cycles: any[] = [];
+    const seenCycles = new Set<string>();
+
+    for (let i = 0; i < nodes.length; i++) {
+      const nodeA = nodes[i];
+      for (let j = 0; j < nodes.length; j++) {
+        if (i === j) continue;
+        const nodeB = nodes[j];
+        if (nodeA.userId === nodeB.userId) continue;
+
+        if (wantsItem(nodeA, nodeB)) {
+          for (let k = 0; k < nodes.length; k++) {
+            if (i === k || j === k) continue;
+            const nodeC = nodes[k];
+            if (nodeA.userId === nodeC.userId || nodeB.userId === nodeC.userId) continue;
+
+            if (wantsItem(nodeB, nodeC) && wantsItem(nodeC, nodeA)) {
+              const sortedIds = [nodeA.id, nodeB.id, nodeC.id].sort();
+              const cycleKey = sortedIds.join("-");
+
+              if (!seenCycles.has(cycleKey)) {
+                seenCycles.add(cycleKey);
+                cycles.push({
+                  id: cycleKey,
+                  nodeA: {
+                    id: nodeA.id,
+                    userId: nodeA.userId,
+                    userName: nodeA.userName,
+                    avatar: nodeA.userAvatar,
+                    title: nodeA.title,
+                    image: nodeA.images[0]
+                  },
+                  nodeB: {
+                    id: nodeB.id,
+                    userId: nodeB.userId,
+                    userName: nodeB.userName,
+                    avatar: nodeB.userAvatar,
+                    title: nodeB.title,
+                    image: nodeB.images[0]
+                  },
+                  nodeC: {
+                    id: nodeC.id,
+                    userId: nodeC.userId,
+                    userName: nodeC.userName,
+                    avatar: nodeC.userAvatar,
+                    title: nodeC.title,
+                    image: nodeC.images[0]
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    res.json(cycles);
+  } catch (error: any) {
+    console.error("Get swap circles error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

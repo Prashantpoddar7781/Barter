@@ -40,7 +40,9 @@ import {
   Lock,
   Heart,
   Brain,
-  TrendingUp
+  TrendingUp,
+  EyeOff,
+  AlertTriangle
 } from 'lucide-react';
 import { cn, getApiUrl } from './lib/utils';
 import { Listing, User, Offer } from './types';
@@ -402,6 +404,124 @@ const DiscoverPage = () => {
 
   const userObj = activeUser || defaultLocalUser;
 
+  // Advanced feature state variables
+  const [feedTab, setFeedTab] = useState<'listings' | 'wishlist' | 'circles'>('listings');
+  const [wishlistItems, setWishlistItems] = useState<any[]>([]);
+  const [swapCircles, setSwapCircles] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+  
+  // Reporting states
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportTargetType, setReportTargetType] = useState<'listing' | 'user'>('listing');
+  const [reportTargetId, setReportTargetId] = useState('');
+  const [reportReason, setReportReason] = useState('fake');
+  const [reportDetails, setReportDetails] = useState('');
+
+  const fetchNotifications = async () => {
+    const token = localStorage.getItem('barter_user_token');
+    if (!token) return;
+    try {
+      const res = await fetch(getApiUrl('/api/notifications'), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data);
+        setUnreadCount(data.filter((n: any) => !n.read).length);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchWishlist = async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/wishlist'));
+      if (res.ok) {
+        const data = await res.json();
+        setWishlistItems(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchCircles = async () => {
+    try {
+      const res = await fetch(getApiUrl('/api/trades/circles'));
+      if (res.ok) {
+        const data = await res.json();
+        setSwapCircles(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (feedTab === 'wishlist') {
+      fetchWishlist();
+    } else if (feedTab === 'circles') {
+      fetchCircles();
+    }
+  }, [feedTab]);
+
+  const handleMarkNotificationsRead = async () => {
+    const token = localStorage.getItem('barter_user_token');
+    if (!token) return;
+    try {
+      await fetch(getApiUrl('/api/notifications/read'), {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSendReport = async () => {
+    const token = localStorage.getItem('barter_user_token');
+    if (!token) {
+      triggerToast('Please log in to submit a report');
+      return;
+    }
+    try {
+      const res = await fetch(getApiUrl('/api/reports'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          targetType: reportTargetType,
+          targetId: reportTargetId,
+          reason: reportReason,
+          details: reportDetails
+        })
+      });
+      if (res.ok) {
+        triggerToast('Report filed successfully. Thank you! 🛡️');
+        setShowReportModal(false);
+        setReportDetails('');
+      } else {
+        const data = await res.json();
+        triggerToast(data.error || 'Failed to file report');
+      }
+    } catch (err: any) {
+      triggerToast(err.message || 'An error occurred');
+    }
+  };
+
   const getGreeting = () => {
     const hours = new Date().getHours();
     if (hours < 12) return 'Good morning';
@@ -589,14 +709,19 @@ const DiscoverPage = () => {
 
           <div className="flex gap-2">
             <button 
-              onClick={() => navigate('/inbox', { state: { selectedTab: 'matches' } })}
+              onClick={() => {
+                setShowNotificationsModal(true);
+                handleMarkNotificationsRead();
+              }}
               title="Notifications"
               className="w-11 h-11 bg-white border border-border-sleek rounded-2xl flex items-center justify-center text-text-charcoal shadow-sm hover:bg-slate-50 hover:-translate-y-0.5 active:translate-y-0 transition-all relative cursor-pointer"
             >
               <Bell size={18} className="text-text-charcoal/80" />
-              <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-brand-primary border-2 border-white rounded-full flex items-center justify-center font-mono">
-                <span className="text-[8px] font-black text-brand-accent">1</span>
-              </span>
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-brand-primary border-2 border-white rounded-full flex items-center justify-center font-mono">
+                  <span className="text-[8px] font-black text-brand-accent">{unreadCount}</span>
+                </span>
+              )}
             </button>
             <button 
               onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
@@ -660,6 +785,37 @@ const DiscoverPage = () => {
               </button>
             );
           })}
+        </div>
+
+        {/* Feed Sub-tabs */}
+        <div className="flex bg-slate-100/80 p-1 rounded-2xl mt-4 border border-slate-200/20">
+          <button
+            onClick={() => setFeedTab('listings')}
+            className={cn(
+              "flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
+              feedTab === 'listings' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/60 hover:text-text-charcoal"
+            )}
+          >
+            🔥 Active Feed
+          </button>
+          <button
+            onClick={() => setFeedTab('wishlist')}
+            className={cn(
+              "flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
+              feedTab === 'wishlist' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/60 hover:text-text-charcoal"
+            )}
+          >
+            📋 Looking For
+          </button>
+          <button
+            onClick={() => setFeedTab('circles')}
+            className={cn(
+              "flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
+              feedTab === 'circles' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/60 hover:text-text-charcoal"
+            )}
+          >
+            🔄 Swap Circles
+          </button>
         </div>
       </header>
 
@@ -803,19 +959,217 @@ const DiscoverPage = () => {
       </AnimatePresence>
 
       {/* Feed - Instagram Style */}
-      <div className="w-full space-y-4 pb-28 pt-2">
-        {sortedAndFilteredListings.length > 0 ? (
-          sortedAndFilteredListings.map((listing) => (
-            <ListingCard key={listing.id} listing={listing} />
-          ))
-        ) : (
-          <div className="col-span-full text-center py-12 bg-white rounded-[32px] border border-border-sleek p-6">
-            <p className="text-3xl mb-2">🔍</p>
-            <p className="text-sm font-bold text-text-charcoal animate-pulse">No trades match query</p>
-            <p className="text-xs text-text-charcoal/40 mt-1">Try another category, adjust criteria slider, or search query!</p>
-          </div>
-        )}
-      </div>
+      {feedTab === 'listings' && (
+        <div className="w-full space-y-4 pb-28 pt-2">
+          {sortedAndFilteredListings.length > 0 ? (
+            sortedAndFilteredListings.map((listing) => (
+              <ListingCard 
+                key={listing.id} 
+                listing={listing} 
+                onReportClick={(type, id) => {
+                  setReportTargetType(type);
+                  setReportTargetId(id);
+                  setReportReason(type === 'listing' ? 'fake' : 'harassment');
+                  setShowReportModal(true);
+                }}
+              />
+            ))
+          ) : (
+            <div className="col-span-full text-center py-12 bg-white rounded-[32px] border border-border-sleek p-6">
+              <p className="text-3xl mb-2">🔍</p>
+              <p className="text-sm font-bold text-text-charcoal animate-pulse">No trades match query</p>
+              <p className="text-xs text-text-charcoal/40 mt-1">Try another category, adjust criteria slider, or search query!</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Wishlist Board (Looking For) */}
+      {feedTab === 'wishlist' && (
+        <div className="w-full space-y-4 pb-28 pt-2">
+          {wishlistItems.length > 0 ? (
+            wishlistItems.map((item) => (
+              <div 
+                key={item.id} 
+                className="bg-white border-y border-slate-100/90 sm:border sm:rounded-[24px] p-6 shadow-sm text-left relative overflow-hidden"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-brand-accent p-0.5 border border-brand-primary/10 overflow-hidden flex-shrink-0">
+                    <img src={item.user.avatar} className="w-full h-full object-cover rounded-xl" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-text-charcoal flex items-center gap-1">
+                      {item.user.name}
+                      {item.user.idVerified && (
+                        <ShieldCheck size={11} className="text-brand-secondary fill-brand-secondary/10 shrink-0" />
+                      )}
+                    </p>
+                    <p className="text-[9px] font-mono text-text-charcoal/40 uppercase tracking-widest mt-0.5">
+                      📍 {item.location}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setReportTargetType('user');
+                      setReportTargetId(item.user.id);
+                      setReportReason('harassment');
+                      setShowReportModal(true);
+                    }}
+                    className="ml-auto text-[9px] font-black uppercase text-text-charcoal/30 hover:text-red-500 border border-border-sleek px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                  >
+                    Report User
+                  </button>
+                </div>
+                <div className="space-y-2 mb-4">
+                  <h4 className="text-sm font-black text-text-charcoal flex items-center gap-2">
+                    <span className="text-lg">🔍</span> Looking For: {item.title}
+                  </h4>
+                  <p className="text-xs text-text-charcoal/70 leading-relaxed">
+                    {item.description}
+                  </p>
+                  <div className="flex gap-2 pt-1.5">
+                    <span className="px-2.5 py-1 bg-brand-accent/50 text-brand-primary text-[8px] font-black uppercase tracking-wider rounded-lg">
+                      Est. Budget: ₹{item.estimatedValue.toLocaleString()}
+                    </span>
+                    <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[8px] font-black uppercase tracking-wider rounded-lg border border-emerald-100">
+                      Category: {item.category}
+                    </span>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    navigate('/chat', { 
+                      state: { 
+                        recipient: item.user, 
+                        initialMessage: `Hi ${item.user.name.split(' ')[0]}! I saw your post on the "Looking For" board for "${item.title}". I might have a matching item. Let's discuss a trade!` 
+                      } 
+                    });
+                  }}
+                  className="w-full py-3.5 bg-brand-primary text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-md shadow-brand-primary/10 hover:bg-brand-primary/95 text-center cursor-pointer block"
+                >
+                  Propose Swap Deal
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12 bg-white rounded-[32px] border border-border-sleek p-6">
+              <p className="text-3xl mb-2">📋</p>
+              <p className="text-sm font-bold text-text-charcoal">No request posts on board</p>
+              <p className="text-xs text-text-charcoal/40 mt-1">Be the first to post what you need using the Post screen! 🚀</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Swap Circles (3-Way Multilateral Loops) */}
+      {feedTab === 'circles' && (
+        <div className="w-full space-y-4 pb-28 pt-2">
+          {swapCircles.length > 0 ? (
+            swapCircles.map((circle) => (
+              <div 
+                key={circle.id} 
+                className="bg-white border-y border-slate-100/90 sm:border sm:rounded-[24px] p-6 shadow-sm text-left relative overflow-hidden"
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-500 flex items-center justify-center font-black">
+                    <Sparkles size={16} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-indigo-700">Barter Loop Detected</h4>
+                    <p className="text-[8px] font-mono text-indigo-500 uppercase tracking-widest">3-Way Swap Circular closed loop</p>
+                  </div>
+                </div>
+
+                {/* Circular representation */}
+                <div className="space-y-4 bg-indigo-50/30 border border-indigo-100/40 p-4 rounded-[28px] my-4">
+                  
+                  {/* Node A -> Node B */}
+                  <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-indigo-500/5 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
+                    <div className="w-10 h-10 rounded-xl bg-surface-beige overflow-hidden shrink-0 border border-slate-100">
+                      <img src={circle.nodeA.image} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-text-charcoal truncate">{circle.nodeA.title}</p>
+                      <p className="text-[8px] text-text-charcoal/40 uppercase tracking-wider font-semibold">Held by: {circle.nodeA.userName}</p>
+                    </div>
+                    <div className="text-indigo-500 text-xs font-bold animate-pulse">➔ gives to ➔</div>
+                    <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 overflow-hidden shrink-0 shadow-sm">
+                      <img src={circle.nodeB.avatar} className="w-full h-full object-cover" />
+                    </div>
+                  </div>
+
+                  {/* Node B -> Node C */}
+                  <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-indigo-500/5 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
+                    <div className="w-10 h-10 rounded-xl bg-surface-beige overflow-hidden shrink-0 border border-slate-100">
+                      <img src={circle.nodeB.image} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-text-charcoal truncate">{circle.nodeB.title}</p>
+                      <p className="text-[8px] text-text-charcoal/40 uppercase tracking-wider font-semibold">Held by: {circle.nodeB.userName}</p>
+                    </div>
+                    <div className="text-indigo-500 text-xs font-bold animate-pulse">➔ gives to ➔</div>
+                    <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 overflow-hidden shrink-0 shadow-sm">
+                      <img src={circle.nodeC.avatar} className="w-full h-full object-cover" />
+                    </div>
+                  </div>
+
+                  {/* Node C -> Node A */}
+                  <div className="flex items-center gap-3 bg-white p-3 rounded-2xl border border-indigo-500/5 shadow-[0_1px_3px_rgba(0,0,0,0.01)]">
+                    <div className="w-10 h-10 rounded-xl bg-surface-beige overflow-hidden shrink-0 border border-slate-100">
+                      <img src={circle.nodeC.image} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-text-charcoal truncate">{circle.nodeC.title}</p>
+                      <p className="text-[8px] text-text-charcoal/40 uppercase tracking-wider font-semibold">Held by: {circle.nodeC.userName}</p>
+                    </div>
+                    <div className="text-indigo-500 text-xs font-bold animate-pulse">➔ gives to ➔</div>
+                    <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 overflow-hidden shrink-0 shadow-sm">
+                      <img src={circle.nodeA.avatar} className="w-full h-full object-cover" />
+                    </div>
+                  </div>
+
+                </div>
+
+                <button 
+                  onClick={() => {
+                    triggerToast("3-Way Circular swap initiated! Opening trade workspace...");
+                    setTimeout(() => {
+                      navigate('/chat', { 
+                        state: { 
+                          recipient: {
+                            id: circle.nodeB.userId,
+                            name: circle.nodeB.userName,
+                            avatar: circle.nodeB.avatar,
+                            location: 'Surat, Gujarat',
+                            rating: 4.8,
+                            tradesCount: 21,
+                            isVerified: true,
+                            isTopTrader: false,
+                            responseRate: '100%',
+                            cashUsed: 0,
+                            phoneVerified: true,
+                            idVerified: true
+                          },
+                          initialMessage: `Hi ${circle.nodeB.userName.split(' ')[0]}! I detected a 3-way circular swap loop on BarterHub involving my item, your "${circle.nodeB.title}", and ${circle.nodeC.userName}'s "${circle.nodeC.title}". Let's coordinate this circular swap! 🔄` 
+                        } 
+                      });
+                    }, 1200);
+                  }}
+                  className="w-full py-3.5 bg-indigo-600 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-md shadow-indigo-600/10 hover:bg-indigo-700 text-center cursor-pointer block"
+                >
+                  Initiate Loop Swap 🔄
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12 bg-white rounded-[32px] border border-border-sleek p-6">
+              <p className="text-3xl mb-2">🔄</p>
+              <p className="text-sm font-bold text-text-charcoal">No circular swap loops detected</p>
+              <p className="text-xs text-text-charcoal/40 mt-1">Circular matching scans listing wants across the community in real-time. Keep checking back! ⚙️</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Dynamic Barter Hub Selector Modal / Dialog */}
       <AnimatePresence>
@@ -917,6 +1271,148 @@ const DiscoverPage = () => {
         )}
       </AnimatePresence>
 
+      {/* Notifications Modal */}
+      <AnimatePresence>
+        {showNotificationsModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setShowNotificationsModal(false)}
+          >
+            <motion.div 
+              initial={{ y: 100, scale: 0.95 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 100, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-md rounded-t-[40px] sm:rounded-[36px] p-6 shadow-2xl relative border border-border-sleek max-h-[80vh] overflow-y-auto"
+            >
+              <div className="w-12 h-1.5 bg-text-charcoal/10 rounded-full mx-auto mb-4 sm:hidden"></div>
+              <div className="flex justify-between items-center mb-6 border-b border-border-sleek pb-4">
+                <h3 className="text-base font-display font-black text-text-charcoal uppercase tracking-wider flex items-center gap-2">
+                  <Bell size={18} className="text-brand-primary" /> Notifications
+                </h3>
+                <button 
+                  onClick={() => setShowNotificationsModal(false)}
+                  className="w-8 h-8 rounded-full bg-surface-beige flex items-center justify-center cursor-pointer text-text-charcoal/40"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              {notifications.length > 0 ? (
+                <div className="space-y-3">
+                  {notifications.map((notif: any) => (
+                    <div 
+                      key={notif.id} 
+                      className={cn(
+                        "p-4 rounded-2xl border text-left leading-normal relative transition-all",
+                        notif.read ? "bg-white border-border-sleek/50 text-text-charcoal/60" : "bg-sky-50/50 border-sky-100 text-text-charcoal font-semibold shadow-sm"
+                      )}
+                    >
+                      {!notif.read && (
+                        <span className="absolute top-4 right-4 w-2 h-2 bg-brand-primary rounded-full animate-ping"></span>
+                      )}
+                      <p className="text-[10px] font-black uppercase text-brand-primary tracking-wider">{notif.title}</p>
+                      <p className="text-xs mt-1">{notif.message}</p>
+                      <p className="text-[8px] text-text-charcoal/30 uppercase mt-2 font-mono">
+                        {new Date(notif.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} • {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-text-charcoal/35 font-bold uppercase tracking-wider text-[10px]">
+                  🔔 All caught up! No notifications.
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reporting Modal */}
+      <AnimatePresence>
+        {showReportModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setShowReportModal(false)}
+          >
+            <motion.div 
+              initial={{ y: 100, scale: 0.95 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 100, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-sm rounded-t-[40px] sm:rounded-[36px] p-6 shadow-2xl relative border border-border-sleek text-left space-y-4"
+            >
+              <div className="w-12 h-1.5 bg-text-charcoal/10 rounded-full mx-auto mb-4 sm:hidden"></div>
+              
+              <div>
+                <h3 className="text-base font-display font-black text-text-charcoal uppercase tracking-wider flex items-center gap-1.5">
+                  🛡️ Report {reportTargetType === 'listing' ? 'Listing' : 'Trader'}
+                </h3>
+                <p className="text-[10px] text-text-charcoal/40 font-bold uppercase tracking-wider mt-0.5">
+                  Help keep BarterHub a safe space
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-charcoal/50">Reason for report</label>
+                <select 
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  className="w-full bg-surface-beige p-3.5 rounded-xl border border-border-sleek text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-primary/10"
+                >
+                  {reportTargetType === 'listing' ? (
+                    <>
+                      <option value="fake">Fake Item / Advertisement</option>
+                      <option value="inappropriate">Inappropriate Content</option>
+                      <option value="spam">Spam / Duplicate listing</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="harassment">Harassment or Abuse</option>
+                      <option value="fraud">Fraud / Scam behavior</option>
+                      <option value="no-show">No-show / Meetup flakes</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-charcoal/50">Additional Details (Optional)</label>
+                <textarea 
+                  rows={3}
+                  value={reportDetails}
+                  onChange={(e) => setReportDetails(e.target.value)}
+                  placeholder="Provide any context that will help moderators investigate..."
+                  className="w-full resize-none bg-surface-beige p-3.5 rounded-xl border border-border-sleek text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-primary/10"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="flex-1 bg-surface-beige border border-border-sleek hover:bg-slate-50 text-text-charcoal font-black uppercase text-[10px] py-4 rounded-xl transition-all cursor-pointer text-center"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendReport}
+                  className="flex-1 bg-red-600 text-white font-black uppercase text-[10px] py-4 rounded-xl shadow-lg shadow-red-600/10 hover:bg-red-700 transition-all cursor-pointer text-center"
+                >
+                  Submit Report
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Local floating toast indicator */}
       <AnimatePresence>
         {toastMessageLocal && (
@@ -935,11 +1431,13 @@ const DiscoverPage = () => {
   );
 };
 
-const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
+const ListingCard = ({ listing, onReportClick }: { listing: Listing; onReportClick?: (type: 'listing' | 'user', id: string) => void; key?: string }) => {
   const navigate = useNavigate();
   const [activeUser] = useAuth();
   const user = getActiveUserById(listing.userId);
   const [isLiked, setIsLiked] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [bypassModeration, setBypassModeration] = useState(false);
 
   const minVal = Math.round(listing.estimatedValue * 0.85);
   const maxVal = Math.round(listing.estimatedValue * 1.15);
@@ -955,11 +1453,13 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
     setIsLiked(!isLiked);
   };
 
+  const isModerated = listing.isModerated || listing.isFlagged;
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white border-y border-slate-100/90 sm:border sm:rounded-[24px] overflow-hidden flex flex-col shadow-[0_2px_12px_rgba(0,0,0,0.01)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.02)] transition-all cursor-pointer"
+      className="bg-white border-y border-slate-100/90 sm:border sm:rounded-[24px] overflow-hidden flex flex-col shadow-[0_2px_12px_rgba(0,0,0,0.01)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.02)] transition-all cursor-pointer relative"
       onClick={() => navigate(`/listing/${listing.id}`)}
     >
       {/* 1. Post Header Row */}
@@ -986,17 +1486,77 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
             </span>
           </div>
         </div>
-        <button className="text-text-charcoal/45 hover:text-text-charcoal p-1 rounded-full cursor-pointer">
-          <MoreVertical size={16} />
-        </button>
+        
+        {/* Instagram style More actions button / menu */}
+        <div className="relative">
+          <button 
+            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+            className="text-text-charcoal/45 hover:text-text-charcoal p-1 rounded-full cursor-pointer relative"
+          >
+            <MoreVertical size={16} />
+          </button>
+          <AnimatePresence>
+            {showMenu && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                className="absolute right-0 top-8 bg-white border border-border-sleek rounded-2xl shadow-xl py-2 w-36 z-30 text-left font-sans"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    if (onReportClick) onReportClick('listing', listing.id);
+                  }}
+                  className="w-full px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 text-left uppercase tracking-wider block"
+                >
+                  Report Item 🛡️
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    if (onReportClick) onReportClick('user', listing.userId);
+                  }}
+                  className="w-full px-4 py-2 text-xs font-bold text-text-charcoal/70 hover:bg-slate-50 text-left uppercase tracking-wider block border-t border-slate-50"
+                >
+                  Report User 👤
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
-
+ 
       {/* 2. Media Container */}
       <div className="relative aspect-[4/5] w-full bg-slate-50 overflow-hidden">
-        {isVideoUrl(listing.images[0]) ? (
-          <video src={getCleanMediaUrl(listing.images[0])} className="w-full h-full object-cover" muted autoPlay loop playsInline />
-        ) : (
-          <img src={getCleanMediaUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover hover:scale-101 transition-transform duration-500" />
+        <div className={cn("w-full h-full transition-all duration-300", isModerated && !bypassModeration ? "blur-2xl scale-105 brightness-[0.35]" : "")}>
+          {isVideoUrl(listing.images[0]) ? (
+            <video src={getCleanMediaUrl(listing.images[0])} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+          ) : (
+            <img src={getCleanMediaUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover hover:scale-101 transition-transform duration-500" />
+          )}
+        </div>
+
+        {isModerated && !bypassModeration && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center text-white bg-black/40">
+            <div className="w-12 h-12 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center border border-red-500/30 mb-3 animate-pulse">
+              <EyeOff size={24} />
+            </div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-red-400 mb-1">Flagged Media</h4>
+            <p className="text-[10px] text-zinc-300 max-w-[200px] mb-4 font-semibold leading-relaxed">
+              This photo/video was flagged by AI auto-moderation as potentially sensitive or unsafe.
+            </p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setBypassModeration(true);
+              }}
+              className="py-2.5 px-5 bg-white text-black hover:bg-slate-50 active:scale-95 transition-all text-[9px] font-black uppercase tracking-widest rounded-xl shadow-lg cursor-pointer"
+            >
+              Reveal Media
+            </button>
+          </div>
         )}
         
         {/* Dynamic Category Overlay Pill */}
@@ -1008,7 +1568,7 @@ const ListingCard = ({ listing }: { listing: Listing; key?: string }) => {
             {listing.isService ? '💼 Service' : '📦 Goods'}
           </span>
         </div>
-
+ 
         {/* Compatibility Score Overlay */}
         <div className="absolute top-3 right-4 z-10">
           <span className="px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black uppercase rounded-full flex items-center gap-0.5 shadow-sm border border-emerald-400/20">
@@ -1084,6 +1644,7 @@ const PostPage = () => {
   const [activeUser] = useAuth();
   
   // Form states
+  const [postType, setPostType] = useState<'listing' | 'wishlist'>('listing');
   const [listingTitle, setListingTitle] = useState('');
   const [listingDesc, setListingDesc] = useState('');
   const [estimatedValue, setEstimatedValue] = useState('');
@@ -1337,8 +1898,54 @@ const PostPage = () => {
     );
   };
 
+  const publishWishlist = async () => {
+    if (!listingTitle.trim()) {
+      showToast('Please provide what you are requesting');
+      return;
+    }
+    if (!estimatedValue) {
+      showToast('Please set an estimated value');
+      return;
+    }
+    const token = localStorage.getItem('barter_user_token');
+    try {
+      setPublishingState('scanning');
+      const res = await fetch(getApiUrl('/api/wishlist'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: listingTitle,
+          description: listingDesc,
+          category: selectedCategory,
+          estimatedValue: Number(estimatedValue),
+          location: activeUser?.location || localStorage.getItem('barter_selected_hub') || 'Surat, Gujarat'
+        })
+      });
+      if (res.ok) {
+        setPublishingState('success');
+        setTimeout(() => {
+          navigate('/');
+        }, 1800);
+      } else {
+        const data = await res.json();
+        showToast(data.error || 'Failed to publish wishlist item');
+        setPublishingState('idle');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'An error occurred');
+      setPublishingState('idle');
+    }
+  };
+
   // Publish flow with Instant Match Check
   const publishTrade = () => {
+    if (postType === 'wishlist') {
+      publishWishlist();
+      return;
+    }
     if (!listingTitle.trim()) {
       showToast('Please provide what you are offering');
       return;
@@ -1595,265 +2202,281 @@ const PostPage = () => {
       {/* Form Content */}
       <div className="p-6 space-y-8 max-w-sm mx-auto">
         
-        {/* Step 1: Media Capture Option */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-text-charcoal/40">Photos & Videos (Snap or Pick)</label>
-            <button 
-              type="button"
-              onClick={() => setShowGallery(true)}
-              className="text-[9px] uppercase font-bold text-brand-primary"
-            >
-              Pick Stock Presets Key
-            </button>
-          </div>
-          
-          {/* Core Device Input Triggers */}
-          <input 
-            type="file" 
-            id="native-capture-fallback" 
-            accept="image/*,video/*" 
-            capture="environment" 
-            className="hidden" 
-            onChange={(e) => {
-              const files = e.target.files;
-              if (files && files.length > 0) {
-                const file: any = files[0];
-                const objectUrl = URL.createObjectURL(file);
-                const isVideo = file.type.startsWith('video/');
-                const finalUrl = isVideo ? 'video:' + objectUrl : objectUrl;
-                setUploadedImages(prev => [...prev, finalUrl].slice(0, 5));
-                showToast(isVideo ? 'Video recorded natively and uploaded! 🎥' : 'Photo captured natively and uploaded! 📸');
-                stopCameraStream();
-              }
+        {/* Toggle Selector */}
+        <div className="flex bg-slate-100/80 p-1 rounded-2xl border border-slate-200/10">
+          <button
+            type="button"
+            onClick={() => {
+              setPostType('listing');
+              // Clear category preset items
+              setUploadedImages([]);
             }}
-          />
-
-          <input 
-            type="file" 
-            id="gallery-file-input" 
-            accept="image/*,video/*" 
-            multiple 
-            className="hidden" 
-            onChange={(e) => {
-              const files = e.target.files;
-              if (files) {
-                const fileArr = Array.from(files);
-                if (uploadedImages.length + fileArr.length > 5) {
-                  showToast('Maximum 5 media items allowed');
-                }
-                const newMedia: string[] = [];
-                fileArr.forEach((file: any) => {
-                  const objectUrl = URL.createObjectURL(file);
-                  const isVideo = file.type.startsWith('video/');
-                  const finalUrl = isVideo ? 'video:' + objectUrl : objectUrl;
-                  newMedia.push(finalUrl);
-                });
-                setUploadedImages(prev => [...prev, ...newMedia].slice(0, 5));
-                showToast(`Loaded ${fileArr.length} files from device! 📁`);
-              }
+            className={cn(
+              "flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
+              postType === 'listing' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/60 hover:text-text-charcoal"
+            )}
+          >
+            Offer Item (Listing)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPostType('wishlist');
+              setUploadedImages([]);
             }}
-          />
+            className={cn(
+              "flex-1 py-2 text-center text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
+              postType === 'wishlist' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/60 hover:text-text-charcoal"
+            )}
+          >
+            Request Item (Wishlist)
+          </button>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            
-            {/* Live Camera Dialog Action */}
-            <button 
-              type="button"
-              onClick={() => startCameraStream('photo')}
-              className="py-6 px-4 bg-white border border-border-sleek rounded-[28px] shadow-sm flex flex-col items-center justify-center gap-2 hover:bg-brand-accent/30 transition-all cursor-pointer relative overflow-hidden group active:scale-95"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-brand-accent flex items-center justify-center text-brand-primary group-hover:scale-110 transition-transform">
-                <Camera size={20} />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-text-charcoal/60">Take Photo/Video</span>
-            </button>
-
-            {/* Core Device File Selector */}
-            <button 
-              type="button"
-              onClick={() => document.getElementById('gallery-file-input')?.click()}
-              className="py-6 px-4 bg-white border border-border-sleek rounded-[28px] shadow-sm flex flex-col items-center justify-center gap-2 hover:bg-brand-accent/30 transition-all cursor-pointer group active:scale-95"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-[#06b6d4]/10 flex items-center justify-center text-[#06b6d4] group-hover:scale-110 transition-transform">
-                <Image size={20} />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-text-charcoal/60">Choose from Device</span>
-            </button>
-          </div>
-
-          {/* Real-time Interactive Camera Stream Layout Modal */}
-          {isCameraActive && (
-            <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-50 flex flex-col items-center justify-between p-6 text-white animate-fade-in">
-              
-              {/* Top Panel Actions */}
-              <div className="w-full max-w-sm flex items-center justify-between mt-4">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="text-xs font-bold text-white/70 tracking-widest uppercase">Barter Camera Stream</span>
-                </div>
+        {postType === 'listing' && (
+          <>
+            {/* Step 1: Media Capture Option */}
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-text-charcoal/40">Photos & Videos (Snap or Pick)</label>
                 <button 
                   type="button"
-                  onClick={stopCameraStream} 
-                  className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
+                  onClick={() => setShowGallery(true)}
+                  className="text-[9px] uppercase font-bold text-brand-primary"
                 >
-                  <X size={18} />
+                  Pick Stock Presets Key
                 </button>
               </div>
+              
+              {/* Core Device Input Triggers */}
+              <input 
+                type="file" 
+                id="native-capture-fallback" 
+                accept="image/*,video/*" 
+                capture="environment" 
+                className="hidden" 
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files && files.length > 0) {
+                    const file: any = files[0];
+                    const objectUrl = URL.createObjectURL(file);
+                    const isVideo = file.type.startsWith('video/');
+                    const finalUrl = isVideo ? 'video:' + objectUrl : objectUrl;
+                    setUploadedImages(prev => [...prev, finalUrl].slice(0, 5));
+                    showToast(isVideo ? 'Video recorded natively and uploaded! 🎥' : 'Photo captured natively and uploaded! 📸');
+                    stopCameraStream();
+                  }
+                }}
+              />
 
-              {/* Instant Tab Switching Controls */}
-              <div className="flex bg-white/10 p-1.5 rounded-2xl w-full max-w-xs justify-center items-center">
-                <button
+              <input 
+                type="file" 
+                id="gallery-file-input" 
+                accept="image/*,video/*" 
+                multiple 
+                className="hidden" 
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files) {
+                    const fileArr = Array.from(files);
+                    if (uploadedImages.length + fileArr.length > 5) {
+                      showToast('Maximum 5 media items allowed');
+                    }
+                    const newMedia: string[] = [];
+                    fileArr.forEach((file: any) => {
+                      const objectUrl = URL.createObjectURL(file);
+                      const isVideo = file.type.startsWith('video/');
+                      const finalUrl = isVideo ? 'video:' + objectUrl : objectUrl;
+                      newMedia.push(finalUrl);
+                    });
+                    setUploadedImages(prev => [...prev, ...newMedia].slice(0, 5));
+                    showToast(`Loaded ${fileArr.length} files from device! 📁`);
+                  }
+                }}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                
+                {/* Live Camera Dialog Action */}
+                <button 
                   type="button"
                   onClick={() => startCameraStream('photo')}
-                  disabled={isRecording}
-                  className={cn(
-                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all cursor-pointer",
-                    cameraMode === 'photo' ? "bg-white text-black shadow-lg" : "text-white/60 hover:text-white"
-                  )}
+                  className="py-6 px-4 bg-white border border-border-sleek rounded-[28px] shadow-sm flex flex-col items-center justify-center gap-2 hover:bg-brand-accent/30 transition-all cursor-pointer relative overflow-hidden group active:scale-95"
                 >
-                  Photo Mode 📸
+                  <div className="w-10 h-10 rounded-2xl bg-brand-accent flex items-center justify-center text-brand-primary group-hover:scale-110 transition-transform">
+                    <Camera size={20} />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-charcoal/60">Take Photo/Video</span>
                 </button>
-                <button
+
+                {/* Core Device File Selector */}
+                <button 
                   type="button"
-                  onClick={() => startCameraStream('video')}
-                  disabled={isRecording}
-                  className={cn(
-                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all cursor-pointer",
-                    cameraMode === 'video' ? "bg-white text-black shadow-lg" : "text-white/60 hover:text-white"
-                  )}
+                  onClick={() => document.getElementById('gallery-file-input')?.click()}
+                  className="py-6 px-4 bg-white border border-border-sleek rounded-[28px] shadow-sm flex flex-col items-center justify-center gap-2 hover:bg-brand-accent/30 transition-all cursor-pointer group active:scale-95"
                 >
-                  Video Mode 🎥
+                  <div className="w-10 h-10 rounded-2xl bg-[#06b6d4]/10 flex items-center justify-center text-[#06b6d4] group-hover:scale-110 transition-transform">
+                    <Image size={20} />
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-charcoal/60">Choose from Device</span>
                 </button>
               </div>
 
-              {/* Viewport Frame Box with real-time media track */}
-              <div className="relative w-full max-w-sm aspect-[4/3] rounded-[36px] overflow-hidden bg-zinc-950 border border-white/5 flex items-center justify-center shadow-2xl">
-                <video 
-                  ref={videoRef} 
-                  autoPlay 
-                  playsInline 
-                  muted 
-                  className="w-full h-full object-cover" 
-                />
-                
-                {isRecording && (
-                  <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-red-600 px-3 py-1.5 rounded-full text-[9px] font-bold tracking-widest uppercase animate-pulse shadow-md">
-                    <span className="w-2 h-2 rounded-full bg-white block"></span>
-                    REC {recordingSeconds}s / 15s limit
-                  </div>
-                )}
-                
-                {!mediaStreamRef.current && (
-                  <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center p-6 text-center gap-3">
-                    <span className="text-4xl animate-bounce">🎥</span>
-                    <p className="text-xs font-semibold text-white/80">Connecting camera feed...</p>
-                    <p className="text-[10px] text-white/45 max-w-[200px]">Allow webcam permissions when prompted or click below to snap natively instead</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Controls Footer */}
-              <div className="w-full max-w-sm flex flex-col items-center gap-3 mb-6">
-                
-                <div className="flex items-center justify-center w-full">
-                  {cameraMode === 'photo' ? (
-                    <button
-                      type="button"
-                      onClick={capturePhoto}
-                      className="w-20 h-20 rounded-full bg-white border-[6px] border-white/20 hover:scale-105 active:scale-95 transition-all text-black flex items-center justify-center shadow-lg cursor-pointer"
-                      title="Capture Photo Frame"
-                    >
-                      <Camera size={26} className="text-black" />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={isRecording ? stopRecording : startRecording}
-                      className={cn(
-                        "w-20 h-20 rounded-full border-[6px] transition-all flex items-center justify-center shadow-lg cursor-pointer active:scale-95",
-                        isRecording 
-                          ? "bg-red-500 border-red-500/25 animate-pulse" 
-                          : "bg-white border-white/20"
-                      )}
-                      title={isRecording ? "Stop Video Clip" : "Start Video Clip"}
-                    >
-                      {isRecording ? (
-                        <span className="w-6 h-6 bg-white rounded-lg block"></span>
-                      ) : (
-                        <span className="w-6 h-6 bg-red-600 rounded-full block animate-ping" style={{ animationDuration: '2.5s' }}></span>
-                      )}
-                    </button>
-                  )}
-                </div>
-
-                {/* Direct native camera launcher trigger fallback */}
-                <div className="w-full flex justify-center mt-1">
-                  <label 
-                    htmlFor="native-capture-fallback" 
-                    className="text-[10px] text-brand-accent hover:text-white font-black tracking-widest uppercase cursor-pointer border border-brand-accent/20 hover:border-white px-4 py-2.5 rounded-xl transition-all bg-white/5 flex items-center gap-1.5 active:scale-95"
-                  >
-                    <Camera size={14} /> Tap to Open System Camera App
-                  </label>
-                </div>
-                
-                <p className="text-[9px] text-zinc-500 text-center uppercase tracking-widest font-black mt-2">Prisinte dynamic compression engine active</p>
-              </div>
-            </div>
-          )}
-
-          {/* Uploaded thumbnails list */}
-          {uploadedImages.length > 0 && (
-            <div className="bg-white p-4 rounded-[28px] border border-border-sleek shadow-sm animate-fade-in">
-              <p className="text-[9px] font-bold uppercase text-text-charcoal/30 tracking-widest mb-3">Selected Media ({uploadedImages.length}/5)</p>
-              <div className="flex flex-wrap gap-2.5">
-                {uploadedImages.map((img, idx) => (
-                  <div key={idx} className="relative w-14 h-14 rounded-xl overflow-hidden border border-border-sleek group bg-surface-beige flex-shrink-0">
-                    {isVideoUrl(img) ? (
-                      <video src={getCleanMediaUrl(img)} className="w-full h-full object-cover" muted autoPlay loop playsInline />
-                    ) : (
-                      <img src={getCleanMediaUrl(img)} className="w-full h-full object-cover" />
-                    )}
+              {/* Real-time Interactive Camera Stream Layout Modal */}
+              {isCameraActive && (
+                <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-50 flex flex-col items-center justify-between p-6 text-white animate-fade-in">
+                  
+                  {/* Top Panel Actions */}
+                  <div className="w-full max-w-sm flex items-center justify-between mt-4">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="text-xs font-bold text-white/70 tracking-widest uppercase">Barter Camera Stream</span>
+                    </div>
                     <button 
                       type="button"
-                      onClick={() => setUploadedImages(imgs => imgs.filter((_, i) => i !== idx))}
-                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600 transition-colors cursor-pointer"
+                      onClick={stopCameraStream} 
+                      className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all"
                     >
-                      <X size={10} />
+                      <X size={18} />
                     </button>
                   </div>
-                ))}
+
+                  {/* Instant Tab Switching Controls */}
+                  <div className="flex bg-white/10 p-1.5 rounded-2xl w-full max-w-xs justify-center items-center">
+                    <button
+                      type="button"
+                      onClick={() => startCameraStream('photo')}
+                      disabled={isRecording}
+                      className={cn(
+                        "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                        cameraMode === 'photo' ? "bg-white text-black shadow-lg" : "text-white/60 hover:text-white"
+                      )}
+                    >
+                      Photo Mode 📸
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startCameraStream('video')}
+                      disabled={isRecording}
+                      className={cn(
+                        "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                        cameraMode === 'video' ? "bg-white text-black shadow-lg" : "text-white/60 hover:text-white"
+                      )}
+                    >
+                      Video Mode 🎥
+                    </button>
+                  </div>
+
+                  {/* Viewport Frame Box with real-time media track */}
+                  <div className="relative w-full max-w-sm aspect-[4/3] rounded-[36px] overflow-hidden bg-zinc-950 border border-white/5 flex items-center justify-center shadow-2xl">
+                    <video 
+                      ref={videoRef} 
+                      autoPlay 
+                      playsInline 
+                      muted 
+                      className="w-full h-full object-cover" 
+                    />
+                    
+                    {isRecording && (
+                      <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-red-600 px-3 py-1.5 rounded-full text-[9px] font-bold tracking-widest uppercase animate-pulse shadow-md">
+                        <span className="w-2 h-2 rounded-full bg-white block"></span>
+                        REC {recordingSeconds}s / 15s limit
+                      </div>
+                    )}
+                    
+                    {!mediaStreamRef.current && (
+                      <div className="absolute inset-0 bg-zinc-950/90 flex flex-col items-center justify-center p-6 text-center gap-3">
+                        <span className="text-4xl animate-bounce">🎥</span>
+                        <p className="text-xs font-semibold text-white/80">Connecting camera feed...</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Video recording action triggers */}
+                  <div className="w-full max-w-xs flex justify-center mb-8">
+                    {cameraMode === 'photo' ? (
+                      <button 
+                        type="button"
+                        onClick={capturePhoto} 
+                        className="w-20 h-20 rounded-full border-[6px] border-white/30 bg-white hover:scale-105 active:scale-95 transition-all shadow-xl flex items-center justify-center"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-6">
+                        {isRecording ? (
+                          <button 
+                            type="button"
+                            onClick={stopRecording} 
+                            className="w-20 h-20 rounded-full border-[6px] border-white/30 bg-red-600 hover:scale-105 active:scale-95 transition-all shadow-xl flex items-center justify-center animate-pulse"
+                          />
+                        ) : (
+                          <button 
+                            type="button"
+                            onClick={startRecording} 
+                            className="w-20 h-20 rounded-full border-[6px] border-white/30 bg-white hover:bg-red-500 hover:border-red-500/30 transition-colors shadow-xl flex items-center justify-center"
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {uploadedImages.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[9px] font-bold uppercase text-text-charcoal/40">Uploaded media ({uploadedImages.length}/5)</label>
+                    <button type="button" onClick={() => setUploadedImages([])} className="text-[9px] font-bold uppercase text-red-500 hover:underline">Clear all</button>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {uploadedImages.map((img, idx) => (
+                      <div key={idx} className="relative w-16 h-16 rounded-2xl overflow-hidden border border-border-sleek shadow-sm">
+                        {isVideoUrl(img) ? (
+                          <video src={getCleanMediaUrl(img)} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+                        ) : (
+                          <img src={getCleanMediaUrl(img)} className="w-full h-full object-cover" />
+                        )}
+                        <button 
+                          type="button"
+                          onClick={() => setUploadedImages(imgs => imgs.filter((_, i) => i !== idx))}
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600 transition-colors cursor-pointer"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Step 2: Segmented type control */}
+            <div className="space-y-3">
+              <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-text-charcoal/40">Listing Type</label>
+              <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl border border-transparent">
+                <button 
+                  type="button"
+                  onClick={() => setIsServiceType(false)}
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all text-center flex justify-center items-center gap-1.5",
+                    !isServiceType ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+                  )}
+                >
+                  <Package size={14} /> Goods / Item
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setIsServiceType(true)}
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all text-center flex justify-center items-center gap-1.5",
+                    isServiceType ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+                  )}
+                >
+                  <Sparkles size={14} /> Services / Skills
+                </button>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Step 2: Segmented type control */}
-        <div className="space-y-3">
-          <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-text-charcoal/40">Listing Type</label>
-          <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl border border-transparent">
-            <button 
-              type="button"
-              onClick={() => setIsServiceType(false)}
-              className={cn(
-                "flex-1 py-3 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all text-center flex justify-center items-center gap-1.5",
-                !isServiceType ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
-              )}
-            >
-              <Package size={14} /> Goods / Item
-            </button>
-            <button 
-              type="button"
-              onClick={() => setIsServiceType(true)}
-              className={cn(
-                "flex-1 py-3 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all text-center flex justify-center items-center gap-1.5",
-                isServiceType ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
-              )}
-            >
-              <Sparkles size={14} /> Services / Skills
-            </button>
-          </div>
-        </div>
+          </>
+        )}
 
         {/* Step 3: Scrollable Category Selection */}
         <div className="space-y-3">
@@ -1931,123 +2554,124 @@ const PostPage = () => {
           </div>
         </div>
 
-        {/* Step 5: What do you want Section - Tag builder + Open to negotiation toggle */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center bg-white p-4 py-3 rounded-3xl border border-border-sleek shadow-sm">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-charcoal">Open to Anything</p>
-              <p className="text-[9px] text-text-charcoal/40 font-semibold uppercase mt-0.5">Accept broad negotiations</p>
-            </div>
-            <button 
-              type="button"
-              onClick={() => setIsOpenToAny(!isOpenToAny)}
-              className={cn(
-                "w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer",
-                isOpenToAny ? "bg-emerald-500" : "bg-slate-300"
-              )}
-            >
-              <span className={cn("bg-white w-4 h-4 rounded-full shadow-lg transition-transform", isOpenToAny ? "translate-x-6" : "translate-x-0")} />
-            </button>
-          </div>
-
-          {/* Conditional block for Open To negotiate or Specific wants */}
-          <AnimatePresence mode="wait">
-            {isOpenToAny ? (
-              <motion.div 
-                key="any"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="bg-[#f0fdfa]/60 border border-dashed border-emerald-300/40 rounded-[32px] p-6 space-y-4"
-              >
-                <div className="flex gap-2 items-start">
-                  <span className="text-xl">🌿</span>
-                  <div>
-                    <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Broad Exchange Options</h4>
-                    <p className="text-[10px] leading-relaxed text-emerald-700 font-semibold mt-0.5">Select broad categories you are willing to check for mutual swaps:</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {['Electronics', 'Furniture', 'Fashion', 'Fitness', 'Others'].map(cat => {
-                    const active = selectedNegCats.includes(cat);
-                    return (
-                      <button 
-                        type="button"
-                        key={cat}
-                        onClick={() => toggleBroadNegCat(cat)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase border transition-all cursor-pointer",
-                          active ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-emerald-700/60 border-emerald-200"
-                        )}
-                      >
-                        {cat} {active ? '✓' : '+'}
-                      </button>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div 
-                key="specific"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="bg-white p-6 rounded-[32px] border border-border-sleek shadow-sm space-y-4"
-              >
-                <div>
-                  <h4 className="text-xs font-bold text-text-charcoal uppercase tracking-wider">Specific Exchange Wants</h4>
-                  <p className="text-[10px] text-text-charcoal/40 font-semibold uppercase mt-0.5">What specific items are you looking for?</p>
-                </div>
-
-                <div className="flex gap-2 relative">
-                  <input 
-                    type="text" 
-                    placeholder="e.g. Acoustic Guitar, MacBook Pro" 
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        addCustomTag();
-                      }
-                    }}
-                    className="flex-1 bg-surface-beige py-2 px-4 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-brand-primary outline-none transition-all placeholder:text-text-charcoal/30 text-text-charcoal" 
-                  />
-                  <button 
-                    type="button"
-                    onClick={addCustomTag}
-                    className="p-3.5 px-4 bg-brand-primary text-white rounded-xl text-xs font-bold hover:scale-105 active:scale-95 transition-all text-center flex-shrink-0"
-                  >
-                    + Add
-                  </button>
-                </div>
-
-                {customTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-border-sleek/50">
-                    {customTags.map((tag, tIdx) => (
-                      <span 
-                        key={tIdx} 
-                        onClick={() => removeCustomTag(tIdx)}
-                        className="px-3 py-1 bg-brand-accent/50 text-brand-primary text-[10px] font-bold uppercase tracking-wider rounded-xl border border-brand-primary/10 cursor-pointer flex items-center gap-1 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
-                        title="Click to remove"
-                      >
-                        {tag} <X size={10} />
-                      </span>
-                    ))}
-                  </div>
+        {postType === 'listing' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center bg-white p-4 py-3 rounded-3xl border border-border-sleek shadow-sm">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-charcoal">Open to Anything</p>
+                <p className="text-[9px] text-text-charcoal/40 font-semibold uppercase mt-0.5">Accept broad negotiations</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsOpenToAny(!isOpenToAny)}
+                className={cn(
+                  "w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer",
+                  isOpenToAny ? "bg-emerald-500" : "bg-slate-300"
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+              >
+                <span className={cn("bg-white w-4 h-4 rounded-full shadow-lg transition-transform", isOpenToAny ? "translate-x-6" : "translate-x-0")} />
+              </button>
+            </div>
+
+            {/* Conditional block for Open To negotiate or Specific wants */}
+            <AnimatePresence mode="wait">
+              {isOpenToAny ? (
+                <motion.div 
+                  key="any"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-[#f0fdfa]/60 border border-dashed border-emerald-300/40 rounded-[32px] p-6 space-y-4"
+                >
+                  <div className="flex gap-2 items-start">
+                    <span className="text-xl">🌿</span>
+                    <div>
+                      <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Broad Exchange Options</h4>
+                      <p className="text-[10px] leading-relaxed text-emerald-700 font-semibold mt-0.5">Select broad categories you are willing to check for mutual swaps:</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Electronics', 'Furniture', 'Fashion', 'Fitness', 'Others'].map(cat => {
+                      const active = selectedNegCats.includes(cat);
+                      return (
+                        <button 
+                          type="button"
+                          key={cat}
+                          onClick={() => toggleBroadNegCat(cat)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase border transition-all cursor-pointer",
+                            active ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-emerald-700/60 border-emerald-200"
+                          )}
+                        >
+                          {cat} {active ? '✓' : '+'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div 
+                  key="specific"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="bg-white p-6 rounded-[32px] border border-border-sleek shadow-sm space-y-4"
+                >
+                  <div>
+                    <h4 className="text-xs font-bold text-text-charcoal uppercase tracking-wider">Specific Exchange Wants</h4>
+                    <p className="text-[10px] text-text-charcoal/40 font-semibold uppercase mt-0.5">What specific items are you looking for?</p>
+                  </div>
+
+                  <div className="flex gap-2 relative">
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Acoustic Guitar, MacBook Pro" 
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addCustomTag();
+                        }
+                      }}
+                      className="flex-1 bg-surface-beige py-2 px-4 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-brand-primary outline-none transition-all placeholder:text-text-charcoal/30 text-text-charcoal" 
+                    />
+                    <button 
+                      type="button"
+                      onClick={addCustomTag}
+                      className="p-3.5 px-4 bg-brand-primary text-white rounded-xl text-xs font-bold hover:scale-105 active:scale-95 transition-all text-center flex-shrink-0"
+                    >
+                      + Add
+                    </button>
+                  </div>
+
+                  {customTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-border-sleek/50">
+                      {customTags.map((tag, tIdx) => (
+                        <span 
+                          key={tIdx} 
+                          onClick={() => removeCustomTag(tIdx)}
+                          className="px-3 py-1 bg-brand-accent/50 text-brand-primary text-[10px] font-bold uppercase tracking-wider rounded-xl border border-brand-primary/10 cursor-pointer flex items-center gap-1 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                          title="Click to remove"
+                        >
+                          {tag} <X size={10} />
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* Publish Action Button */}
         <button 
           onClick={publishTrade}
           className="w-full bg-brand-primary text-white py-5 rounded-[24px] font-bold text-sm uppercase tracking-[0.2em] shadow-xl shadow-brand-primary/20 hover:bg-[#030712] transition-colors active:scale-95 text-center cursor-pointer flex items-center justify-center gap-2 mt-4"
         >
-          Publish Trade Exchange
+          {postType === 'listing' ? 'Publish Trade Exchange' : 'Post Request to Board'}
         </button>
 
       </div>
@@ -2430,6 +3054,26 @@ const ProfilePage = () => {
     setTimeout(() => setToastMsg(''), 3000);
   };
 
+  const [tradeHistory, setTradeHistory] = useState<any[]>([]);
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const token = localStorage.getItem('barter_user_token');
+      if (!token) return;
+      try {
+        const res = await fetch(getApiUrl('/api/trades/history'), {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setTradeHistory(data);
+        }
+      } catch (err) {
+        console.error("Error fetching trade history:", err);
+      }
+    };
+    fetchHistory();
+  }, []);
+
   const handleNameSave = () => {
     if (!newNameVal.trim()) return;
     setActiveUser(prev => prev ? {
@@ -2740,6 +3384,52 @@ const ProfilePage = () => {
           </div>
         </div>
 
+        {/* COMPLETED SWAP HISTORY TIMELINE */}
+        <div className="bg-white p-5 rounded-[32px] border border-border-sleek shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-1.5 h-3 bg-[#4f46e5] rounded-full"></span>
+            <h3 className="text-[10px] font-black uppercase tracking-[0.15em] text-text-charcoal/40">Completed Swap History</h3>
+          </div>
+          {tradeHistory.length > 0 ? (
+            <div className="space-y-4">
+              {tradeHistory.map((trade: any, idx: number) => {
+                const isUser1 = trade.user1Id === user.id || trade.user1Id === 'me';
+                const otherPartyName = isUser1 ? trade.user2Name : trade.user1Name;
+                const myItem = isUser1 ? trade.item1Title : trade.item2Title;
+                const otherItem = isUser1 ? trade.item2Title : trade.item1Title;
+                return (
+                  <div 
+                    key={trade.id} 
+                    className={cn(
+                      "flex gap-4 relative",
+                      idx !== tradeHistory.length - 1 && "after:content-[''] after:absolute after:left-5 after:top-10 after:bottom-[-20px] after:w-0.5 after:bg-border-sleek"
+                    )}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 border border-emerald-400 shadow-sm z-10">
+                      <Repeat size={16} />
+                    </div>
+                    <div className="flex-1 flex flex-col leading-tight text-left">
+                      <p className="text-xs font-black text-text-charcoal uppercase tracking-wider">
+                        Swap with {otherPartyName}
+                      </p>
+                      <p className="text-[10px] text-text-charcoal/60 mt-0.5">
+                        Exchanged: <span className="font-bold text-brand-primary">{myItem}</span> ➔ <span className="font-bold text-emerald-600">{otherItem}</span>
+                      </p>
+                      <p className="text-[8px] text-text-charcoal/30 uppercase font-black tracking-widest mt-1">
+                        {new Date(trade.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-text-charcoal/30 font-bold uppercase tracking-wider text-[9px]">
+              No swaps completed yet. Get trading!
+            </div>
+          )}
+        </div>
+
         {/* GEOGRAPHICAL SWAP HUB PIN (Interactive CSS/SVG Map Plane) */}
         <div id="map-section" className="bg-white p-5 rounded-[32px] border border-border-sleek shadow-sm space-y-4">
           <div className="flex justify-between items-center">
@@ -3013,6 +3703,17 @@ const ChatPage = () => {
   ).sort((a,b) => a.timestamp - b.timestamp);
 
   const [typedMessage, setTypedMessage] = useState(() => (location.state as any)?.initialMessage || '');
+  const [showSafetyBanner, setShowSafetyBanner] = useState(false);
+  const [showSafetyModal, setShowSafetyModal] = useState(false);
+
+  useEffect(() => {
+    const keywords = /\b(meet|meetup|address|location|place|cafe|coffee|meet-up|at|street|road)\b/i;
+    if (keywords.test(typedMessage)) {
+      setShowSafetyBanner(true);
+    } else {
+      setShowSafetyBanner(false);
+    }
+  }, [typedMessage]);
 
   const handleSendMessage = () => {
     if (!typedMessage.trim()) return;
@@ -3049,6 +3750,7 @@ const ChatPage = () => {
   };
 
   return (
+  <>
   <div className="bg-white h-screen flex flex-col pb-24">
     <header className="p-6 border-b border-border-sleek flex items-center gap-4 bg-white/80 backdrop-blur-md sticky top-0 z-10">
       <button onClick={() => navigate(-1)} className="p-2 -ml-2 hover:scale-105 active:scale-95 transition-all"><ArrowLeft size={24} className="text-text-charcoal" /></button>
@@ -3062,8 +3764,24 @@ const ChatPage = () => {
           Responds fast
         </p>
       </div>
-      <MoreVertical size={20} className="text-text-charcoal/40" />
     </header>
+
+    {/* Floating Safety Warning Banner */}
+    <AnimatePresence>
+      {showSafetyBanner && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          onClick={() => setShowSafetyModal(true)}
+          className="bg-amber-500/10 border-b border-amber-500/20 text-amber-800 text-[10px] uppercase font-black tracking-widest px-4 py-2.5 flex items-center justify-between cursor-pointer select-none z-20 hover:bg-amber-500/15 transition-all text-center leading-none"
+        >
+          <span className="flex items-center gap-1.5 mx-auto">
+            <AlertTriangle size={12} className="text-amber-600 shrink-0" /> Organising a meetup? View safety tips
+          </span>
+        </motion.div>
+      )}
+    </AnimatePresence>
 
     <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-surface-beige/30">
       <div className="flex justify-center">
@@ -3212,6 +3930,56 @@ const ChatPage = () => {
       </button>
     </div>
   </div>
+
+  {/* Safety Tips Modal */}
+  <AnimatePresence>
+    {showSafetyModal && (
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        onClick={() => setShowSafetyModal(false)}
+      >
+        <motion.div 
+          initial={{ scale: 0.95, y: 20 }}
+          animate={{ scale: 1, y: 0 }}
+          exit={{ scale: 0.95, y: 20 }}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white w-full max-w-sm rounded-[36px] p-6 shadow-2xl relative border border-border-sleek text-left space-y-4"
+        >
+          <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600 shadow-sm">
+            <ShieldCheck size={24} className="stroke-[2.5]" />
+          </div>
+          <h3 className="text-base font-display font-black text-text-charcoal uppercase tracking-wider">Meetup Safety Protocol</h3>
+          <p className="text-[11px] text-text-charcoal/50 leading-relaxed font-semibold">
+            For a safe and seamless exchange, please observe the following guidelines:
+          </p>
+          <ul className="space-y-3 pt-2 text-[10px] font-bold text-text-charcoal/70 uppercase tracking-wide">
+            <li className="flex items-start gap-2">
+              <span className="text-emerald-500">📍</span> Meet in a busy, well-lit public place (e.g. coffee shop, metro station).
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-emerald-500">👥</span> Bring a friend with you if possible.
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-emerald-500">🔍</span> Inspect the item thoroughly before concluding the swap.
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-emerald-500">💬</span> Keep all communications within the BarterHub chat.
+            </li>
+          </ul>
+          <button 
+            onClick={() => setShowSafetyModal(false)}
+            className="w-full bg-brand-primary text-white py-3.5 rounded-[18px] text-[10px] font-black uppercase tracking-widest text-center shadow-lg transition-all hover:bg-brand-primary/95 cursor-pointer mt-4"
+          >
+            I Understand, Keep Me Safe
+          </button>
+        </motion.div>
+      </motion.div>
+    )}
+  </AnimatePresence>
+  </>
   );
 };
 
@@ -3239,6 +4007,51 @@ const ListingDetailPage = () => {
   const [intelligence, setIntelligence] = useState<BarterIntelligence | null>(null);
   const [loadingIntel, setLoadingIntel] = useState(true);
   const [activeIntelTab, setActiveIntelTab] = useState<'who' | 'fair' | 'three' | 'best'>('who');
+  
+  // Moderation and reporting states
+  const [bypassModeration, setBypassModeration] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('fake');
+  const [reportDetails, setReportDetails] = useState('');
+  const [toastMessageLocal, setToastMessageLocal] = useState('');
+
+  const triggerToast = (msg: string) => {
+    setToastMessageLocal(msg);
+    setTimeout(() => setToastMessageLocal(''), 4000);
+  };
+
+  const handleSendReport = async () => {
+    const token = localStorage.getItem('barter_user_token');
+    if (!token) {
+      triggerToast('Please log in to submit a report');
+      return;
+    }
+    try {
+      const res = await fetch(getApiUrl('/api/reports'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          targetType: 'listing',
+          targetId: listing.id,
+          reason: reportReason,
+          details: reportDetails
+        })
+      });
+      if (res.ok) {
+        triggerToast('Report filed successfully. Thank you! 🛡️');
+        setShowReportModal(false);
+        setReportDetails('');
+      } else {
+        const data = await res.json();
+        triggerToast(data.error || 'Failed to file report');
+      }
+    } catch (err: any) {
+      triggerToast(err.message || 'An error occurred');
+    }
+  };
   
   // Instant Match Simulation
   const myListings = listings.filter(l => l.userId === activeUser?.id || l.userId === 'me');
@@ -3307,19 +4120,55 @@ const ListingDetailPage = () => {
 
   return (
     <div className="bg-white min-h-screen pb-32">
-      <div className="relative h-[420px] bg-brand-accent/20">
-        {isVideoUrl(listing.images[0]) ? (
-          <video src={getCleanMediaUrl(listing.images[0])} className="w-full h-full object-cover animate-fade-in" controls autoPlay loop playsInline />
-        ) : (
-          <img src={getCleanMediaUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover animate-fade-in" />
+      <div className="relative h-[420px] bg-brand-accent/20 overflow-hidden">
+        <div className={cn("w-full h-full transition-all duration-300", (listing.isModerated || listing.isFlagged) && !bypassModeration ? "blur-2xl scale-105 brightness-[0.35]" : "")}>
+          {isVideoUrl(listing.images[0]) ? (
+            <video src={getCleanMediaUrl(listing.images[0])} className="w-full h-full object-cover animate-fade-in" controls={bypassModeration || !(listing.isModerated || listing.isFlagged)} autoPlay loop playsInline />
+          ) : (
+            <img src={getCleanMediaUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover animate-fade-in" />
+          )}
+        </div>
+
+        {(listing.isModerated || listing.isFlagged) && !bypassModeration && (
+          <div className="absolute inset-0 z-15 flex flex-col items-center justify-center p-6 text-center text-white bg-black/40">
+            <div className="w-12 h-12 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center border border-red-500/30 mb-3 animate-pulse">
+              <EyeOff size={24} />
+            </div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-red-400 mb-1">Flagged Media</h4>
+            <p className="text-[10px] text-zinc-300 max-w-[200px] mb-4 font-semibold leading-relaxed">
+              This photo/video was flagged by AI auto-moderation as potentially sensitive or unsafe.
+            </p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setBypassModeration(true);
+              }}
+              className="py-2.5 px-5 bg-white text-black hover:bg-slate-50 active:scale-95 transition-all text-[9px] font-black uppercase tracking-widest rounded-xl shadow-lg cursor-pointer"
+            >
+              Reveal Media
+            </button>
+          </div>
         )}
-        <div className="absolute top-6 left-6 right-6 flex justify-between">
+
+        <div className="absolute top-6 left-6 right-6 flex justify-between z-20">
           <button onClick={() => navigate(-1)} className="w-12 h-12 bg-black/20 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/10 transition-all active:scale-90">
             <ArrowLeft size={22} />
           </button>
-          <button className="w-12 h-12 bg-black/20 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/15 transition-all active:scale-90">
-            <Share2 size={22} />
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => {
+                setReportReason('fake');
+                setShowReportModal(true);
+              }}
+              title="Report Listing"
+              className="w-12 h-12 bg-black/20 backdrop-blur-xl rounded-2xl flex items-center justify-center text-red-400 border border-white/15 transition-all active:scale-90"
+            >
+              <AlertTriangle size={22} />
+            </button>
+            <button className="w-12 h-12 bg-black/20 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/15 transition-all active:scale-90">
+              <Share2 size={22} />
+            </button>
+          </div>
         </div>
         {isDirectMatch && (
            <div className="absolute top-24 left-6 right-6">
@@ -3578,6 +4427,91 @@ const ListingDetailPage = () => {
           Make an Offer
         </button>
       </div>
+      {/* Reporting Modal */}
+      <AnimatePresence>
+        {showReportModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setShowReportModal(false)}
+          >
+            <motion.div 
+              initial={{ y: 100, scale: 0.95 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 100, scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-sm rounded-t-[40px] sm:rounded-[36px] p-6 shadow-2xl relative border border-border-sleek text-left space-y-4"
+            >
+              <div className="w-12 h-1.5 bg-text-charcoal/10 rounded-full mx-auto mb-4 sm:hidden"></div>
+              
+              <div>
+                <h3 className="text-base font-display font-black text-text-charcoal uppercase tracking-wider flex items-center gap-1.5">
+                  🛡️ Report Listing
+                </h3>
+                <p className="text-[10px] text-text-charcoal/40 font-bold uppercase tracking-wider mt-0.5">
+                  Help keep BarterHub a safe space
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-charcoal/50">Reason for report</label>
+                <select 
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  className="w-full bg-surface-beige p-3.5 rounded-xl border border-border-sleek text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-primary/10"
+                >
+                  <option value="fake">Fake Item / Advertisement</option>
+                  <option value="inappropriate">Inappropriate Content</option>
+                  <option value="spam">Spam / Duplicate listing</option>
+                </select>
+              </div>
+
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-charcoal/50">Additional Details (Optional)</label>
+                <textarea 
+                  rows={3}
+                  value={reportDetails}
+                  onChange={(e) => setReportDetails(e.target.value)}
+                  placeholder="Provide any context that will help moderators investigate..."
+                  className="w-full resize-none bg-surface-beige p-3.5 rounded-xl border border-border-sleek text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-primary/10"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="flex-1 bg-surface-beige border border-border-sleek hover:bg-slate-50 text-text-charcoal font-black uppercase text-[10px] py-4 rounded-xl transition-all cursor-pointer text-center"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendReport}
+                  className="flex-1 bg-red-600 text-white font-black uppercase text-[10px] py-4 rounded-xl shadow-lg shadow-red-600/10 hover:bg-red-700 transition-all cursor-pointer text-center"
+                >
+                  Submit Report
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Toast Indicator */}
+      <AnimatePresence>
+        {toastMessageLocal && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-24 left-6 right-6 bg-[#0f172a] text-[#38bdf8] border border-sky-900/30 font-bold text-[10px] uppercase tracking-widest p-4.5 rounded-[22px] shadow-2xl flex items-center justify-center gap-2 z-50 text-center"
+          >
+            <Sparkles size={12} className="animate-spin" />
+            <span>{toastMessageLocal}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

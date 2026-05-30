@@ -34,6 +34,9 @@ model User {
   listings              Listing[]
   sentMessages          Message[] @relation("SentMessages")
   receivedMessages      Message[] @relation("ReceivedMessages")
+  wishlist              WishlistItem[]
+  notifications         Notification[]
+  sentReports           Report[] @relation("SentReports")
 
   @@index([emailOrPhone])
 }
@@ -63,9 +66,12 @@ model Listing {
   negotiableCategories Json      // Stored as JSON array of categories
   tags                 Json      // Stored as JSON array of tags
   isService            Boolean   @default(false)
+  isFlagged            Boolean   @default(false)
+  isModerated          Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   messages             Message[]
+  reports              Report[]
 
   @@index([userId])
   @@index([category])
@@ -86,4 +92,62 @@ model Message {
   @@index([senderId])
   @@index([receiverId])
   @@index([listingId])
+}
+
+model WishlistItem {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  category       String
+  estimatedValue Float
+  location       String   @default("Surat, Gujarat")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([category])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   // "match", "message", "system", etc.
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model TradeRecord {
+  id             String   @id @default(cuid())
+  user1Id        String
+  user2Id        String
+  user1Name      String
+  user2Name      String
+  item1Title     String
+  item2Title     String
+  createdAt      DateTime @default(now())
+
+  @@index([user1Id])
+  @@index([user2Id])
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  reporterId  String
+  reporter    User     @relation("SentReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType  String   // "listing" or "user"
+  targetId    String   // ID of reported listing or user
+  listing     Listing? @relation(fields: [targetId], references: [id], onDelete: Cascade) // link if targetType is listing
+  reason      String   // fake, inappropriate, spam, harassment, fraud, no-show
+  details     String?
+  createdAt   DateTime @default(now())
+
+  @@index([reporterId])
+  @@index([targetId])
 }
