@@ -334,45 +334,48 @@ export const useListings = () => {
   const setListingsWrapper = async (input: any) => {
     if (typeof input === 'function') {
       const result = input(globalListingsState);
-      const newListing = result[0];
-      if (newListing) {
-        const token = localStorage.getItem('barter_user_token');
-        try {
-          const res = await fetch(getApiUrl('/api/listings'), {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              title: newListing.title,
-              description: newListing.description,
-              images: newListing.images,
-              category: newListing.category,
-              condition: newListing.condition,
-              estimatedValue: newListing.estimatedValue,
-              location: newListing.location,
-              distance: newListing.distance,
-              wants: newListing.wants,
-              openToNegotiate: newListing.openToNegotiate,
-              negotiableCategories: newListing.negotiableCategories,
-              tags: newListing.tags,
-              isService: newListing.isService
-            })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const formatted = {
-              ...data,
-              images: typeof data.images === 'string' ? JSON.parse(data.images) : data.images,
-              wants: typeof data.wants === 'string' ? JSON.parse(data.wants) : data.wants,
-              negotiableCategories: typeof data.negotiableCategories === 'string' ? JSON.parse(data.negotiableCategories) : data.negotiableCategories,
-              tags: typeof data.tags === 'string' ? JSON.parse(data.tags) : data.tags
-            };
-            saveLocalListings(prev => [formatted, ...prev.filter(item => item.id !== newListing.id)]);
-            return;
-          }
-        } catch (_) {}
+      const isAdding = result.length > globalListingsState.length;
+      if (isAdding) {
+        const newListing = result[0];
+        if (newListing) {
+          const token = localStorage.getItem('barter_user_token');
+          try {
+            const res = await fetch(getApiUrl('/api/listings'), {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                title: newListing.title,
+                description: newListing.description,
+                images: newListing.images,
+                category: newListing.category,
+                condition: newListing.condition,
+                estimatedValue: newListing.estimatedValue,
+                location: newListing.location,
+                distance: newListing.distance,
+                wants: newListing.wants,
+                openToNegotiate: newListing.openToNegotiate,
+                negotiableCategories: newListing.negotiableCategories,
+                tags: newListing.tags,
+                isService: newListing.isService
+              })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const formatted = {
+                ...data,
+                images: typeof data.images === 'string' ? JSON.parse(data.images) : data.images,
+                wants: typeof data.wants === 'string' ? JSON.parse(data.wants) : data.wants,
+                negotiableCategories: typeof data.negotiableCategories === 'string' ? JSON.parse(data.negotiableCategories) : data.negotiableCategories,
+                tags: typeof data.tags === 'string' ? JSON.parse(data.tags) : data.tags
+              };
+              saveLocalListings(prev => [formatted, ...prev.filter(item => item.id !== newListing.id)]);
+              return;
+            }
+          } catch (_) {}
+        }
       }
       saveLocalListings(result);
     } else {
@@ -1303,24 +1306,35 @@ const DiscoverPage = () => {
 
               {notifications.length > 0 ? (
                 <div className="space-y-3">
-                  {notifications.map((notif: any) => (
-                    <div 
-                      key={notif.id} 
-                      className={cn(
-                        "p-4 rounded-2xl border text-left leading-normal relative transition-all",
-                        notif.read ? "bg-white border-border-sleek/50 text-text-charcoal/60" : "bg-sky-50/50 border-sky-100 text-text-charcoal font-semibold shadow-sm"
-                      )}
-                    >
-                      {!notif.read && (
-                        <span className="absolute top-4 right-4 w-2 h-2 bg-brand-primary rounded-full animate-ping"></span>
-                      )}
-                      <p className="text-[10px] font-black uppercase text-brand-primary tracking-wider">{notif.title}</p>
-                      <p className="text-xs mt-1">{notif.message}</p>
-                      <p className="text-[8px] text-text-charcoal/30 uppercase mt-2 font-mono">
-                        {new Date(notif.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} • {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  ))}
+                  {notifications.map((notif: any) => {
+                    const hasLink = !!notif.listingId;
+                    return (
+                      <div 
+                        key={notif.id} 
+                        onClick={() => {
+                          if (hasLink) {
+                            navigate(`/listing/${notif.listingId}`);
+                            setShowNotificationsModal(false);
+                          }
+                        }}
+                        className={cn(
+                          "p-4 rounded-2xl border text-left leading-normal relative transition-all",
+                          notif.read ? "bg-white border-border-sleek/50 text-text-charcoal/60" : "bg-sky-50/50 border-sky-100 text-text-charcoal font-semibold shadow-sm",
+                          hasLink ? "cursor-pointer hover:border-brand-primary/45 active:scale-[0.99]" : ""
+                        )}
+                      >
+                        {!notif.read && (
+                          <span className="absolute top-4 right-4 w-2 h-2 bg-brand-primary rounded-full animate-ping"></span>
+                        )}
+                        <p className="text-[10px] font-black uppercase text-brand-primary tracking-wider flex items-center gap-1">
+                          {notif.title} {hasLink && <span className="text-[8px] font-semibold bg-brand-primary/10 text-brand-primary px-1.5 py-0.5 rounded ml-1">Click to view ➔</span>}</p>
+                        <p className="text-xs mt-1">{notif.message}</p>
+                        <p className="text-[8px] text-text-charcoal/30 uppercase mt-2 font-mono">
+                          {new Date(notif.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} • {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-12 text-text-charcoal/35 font-bold uppercase tracking-wider text-[10px]">
@@ -3029,7 +3043,7 @@ const InboxHub = () => {
 
 const ProfilePage = () => {
   const navigate = useNavigate();
-  const [listings] = useListings();
+  const [listings, setListings] = useListings();
   const [activeUser, setActiveUser] = useAuth();
   
   const [toastMsg, setToastMsg] = useState('');
@@ -3135,6 +3149,29 @@ const ProfilePage = () => {
       location: city
     } : null);
     showToast(`Geographical swap hub pinned to ${city}! 📍`);
+  };
+
+  const handleDeleteListing = async (listingId: string) => {
+    if (!window.confirm("Are you sure you want to remove this listing?")) return;
+    
+    const token = localStorage.getItem('barter_user_token');
+    if (!token) return;
+    
+    try {
+      const res = await fetch(getApiUrl(`/api/listings/${listingId}`), {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setListings((prev: Listing[]) => prev.filter(l => l.id !== listingId));
+        showToast('Listing removed successfully! 🗑️');
+      } else {
+        const data = await res.json();
+        showToast(data.error || 'Failed to remove listing');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'An error occurred');
+    }
   };
 
   // Extract initials if avatar doesn't exist
@@ -3651,8 +3688,21 @@ const ProfilePage = () => {
                       <p className="text-[10px] text-text-charcoal/40 uppercase tracking-widest font-mono">Est. Value: ₹{item.estimatedValue.toLocaleString()}</p>
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-surface-beige flex items-center justify-center">
-                     <ChevronRight size={14} className="text-text-charcoal/30" />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteListing(item.id);
+                      }}
+                      className="w-8 h-8 rounded-full bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 transition-all border border-red-100/50 cursor-pointer animate-fade-in"
+                      title="Remove Listing"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <div className="w-8 h-8 rounded-full bg-surface-beige flex items-center justify-center">
+                      <ChevronRight size={14} className="text-text-charcoal/30" />
+                    </div>
                   </div>
                 </div>
               ))

@@ -776,7 +776,8 @@ app.post("/api/listings", authenticateToken, async (req: AuthRequest, res) => {
               userId: item.userId,
               title: "New Match Found! 🌟",
               message: `Someone just listed "${sanitizedTitle}" which matches your wishlist item "${item.title}"!`,
-              type: "match"
+              type: "match",
+              listingId: listing.id
             }
           });
         }
@@ -788,6 +789,31 @@ app.post("/api/listings", authenticateToken, async (req: AuthRequest, res) => {
     res.status(201).json(listing);
   } catch (error: any) {
     console.error("Create listing error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/listings/:id - Delete listing
+app.delete("/api/listings/:id", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const listing = await prisma.listing.findUnique({
+      where: { id }
+    });
+    if (!listing) {
+      return res.status(404).json({ error: "Listing not found" });
+    }
+    if (listing.userId !== req.user?.id) {
+      return res.status(403).json({ error: "Unauthorized to delete this listing" });
+    }
+
+    await prisma.listing.delete({
+      where: { id }
+    });
+
+    res.json({ success: true, message: "Listing deleted successfully" });
+  } catch (error: any) {
+    console.error("Delete listing error:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -994,7 +1020,8 @@ app.post("/api/wishlist", authenticateToken, async (req: AuthRequest, res) => {
             userId: req.user?.id!,
             title: "Wishlist Match Found!",
             message: `An active listing "${l.title}" matches your new wishlist item "${sanitizedTitle}"!`,
-            type: "match"
+            type: "match",
+            listingId: l.id
           }
         });
       }

@@ -117,6 +117,7 @@ model Notification {
   title     String
   message   String
   type      String   // "match", "message", "system", etc.
+  listingId String?  // Target listing link
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
