@@ -803,7 +803,16 @@ app.get("/api/listings/:id", async (req, res) => {
     if (!listing) {
       return res.status(404).json({ error: "Listing not found" });
     }
-    res.json(listing);
+
+    const formatted = {
+      ...listing,
+      images: typeof listing.images === 'string' ? JSON.parse(listing.images) : listing.images,
+      wants: typeof listing.wants === 'string' ? JSON.parse(listing.wants) : listing.wants,
+      negotiableCategories: typeof listing.negotiableCategories === 'string' ? JSON.parse(listing.negotiableCategories) : listing.negotiableCategories,
+      tags: typeof listing.tags === 'string' ? JSON.parse(listing.tags) : listing.tags
+    };
+
+    res.json(formatted);
   } catch (error: any) {
     console.error("Get listing error:", error);
     res.status(500).json({ error: error.message });
