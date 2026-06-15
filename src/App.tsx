@@ -210,6 +210,35 @@ export const saveLocalChats = (items: SavedMessage[] | ((prev: SavedMessage[]) =
   CHAT_LISTENERS.forEach(l => l());
 };
 
+export const cleanUserObj = (u: any): User => ({
+  id: u.id,
+  name: u.name || 'User',
+  avatar: u.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.id)}`,
+  location: u.location || 'Surat, Gujarat',
+  rating: typeof u.rating === 'number' ? u.rating : 4.8,
+  tradesCount: typeof u.tradesCount === 'number' ? u.tradesCount : 1,
+  isVerified: !!u.isVerified,
+  isTopTrader: !!u.isTopTrader,
+  responseRate: u.responseRate || '100%',
+  cashUsed: typeof u.cashUsed === 'number' ? u.cashUsed : 0,
+  phoneVerified: !!u.phoneVerified,
+  idVerified: !!u.idVerified,
+  cancellationRate: u.cancellationRate || '0%',
+  memberSince: u.memberSince || 'May 2026',
+  emailOrPhone: u.emailOrPhone || undefined,
+  idVerificationStatus: u.idVerificationStatus || 'unverified',
+  aadhaarFront: u.aadhaarFront || undefined,
+  aadhaarBack: u.aadhaarBack || undefined,
+  interests: (() => {
+    try {
+      if (typeof u.interests === 'string') return JSON.parse(u.interests);
+      if (Array.isArray(u.interests)) return u.interests;
+    } catch (_) {}
+    return [];
+  })(),
+  isOnboardingCompleted: !!u.isOnboardingCompleted
+});
+
 export const useChats = () => {
   const [chats, setChats] = useState(globalChatsState);
 
@@ -230,15 +259,23 @@ export const useChats = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        const mappedChats = data.map((msg: any) => ({
-          id: msg.id,
-          senderId: msg.senderId,
-          receiverId: msg.receiverId,
-          listingId: msg.listingId || undefined,
-          text: msg.text,
-          time: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          timestamp: msg.timestamp
-        }));
+        const mappedChats = data.map((msg: any) => {
+          if (msg.sender) {
+            saveLocalUserToRegistry(cleanUserObj(msg.sender));
+          }
+          if (msg.receiver) {
+            saveLocalUserToRegistry(cleanUserObj(msg.receiver));
+          }
+          return {
+            id: msg.id,
+            senderId: msg.senderId,
+            receiverId: msg.receiverId,
+            listingId: msg.listingId || undefined,
+            text: msg.text,
+            time: new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timestamp: msg.timestamp
+          };
+        });
         saveLocalChats(mappedChats);
       }
     } catch (_) {}
@@ -271,6 +308,12 @@ export const useChats = () => {
           });
           if (res.ok) {
             const data = await res.json();
+            if (data.sender) {
+              saveLocalUserToRegistry(cleanUserObj(data.sender));
+            }
+            if (data.receiver) {
+              saveLocalUserToRegistry(cleanUserObj(data.receiver));
+            }
             const mapped = {
               id: data.id,
               senderId: data.senderId,
@@ -433,6 +476,13 @@ const DiscoverPage = () => {
         const data = await res.json();
         setNotifications(data);
         setUnreadCount(data.filter((n: any) => !n.read).length);
+      }
+
+      // Refresh listings in background to sync match targets in listings cache
+      const listingsRes = await fetch(getApiUrl('/api/listings'));
+      if (listingsRes.ok) {
+        const listingsData = await listingsRes.json();
+        saveLocalListings(listingsData);
       }
     } catch (err) {
       console.error(err);
@@ -1080,6 +1130,7 @@ const DiscoverPage = () => {
                     navigate('/chat', { 
                       state: { 
                         recipient: item.user, 
+                        wishlist: item,
                         initialMessage: `Hi ${item.user.name.split(' ')[0]}! I saw your post on the "Looking For" board for "${item.title}". I might have a matching item. Let's discuss a trade!` 
                       } 
                     });
@@ -1703,6 +1754,15 @@ const PostPage = () => {
   const [selectedCategory, setSelectedCategory] = useState('Electronics');
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+      reader.readAsDataURL(file);
+    });
+  };
+  
   // Return criteria states
   const [isOpenToAny, setIsOpenToAny] = useState(false);
   const [customTags, setCustomTags] = useState<string[]>([]);
@@ -1872,10 +1932,18 @@ const PostPage = () => {
 
       recorder.onstop = () => {
         const videoBlob = new Blob(chunksRef.current as any[], { type: (chunksRef.current[0] as any)?.type || 'video/mp4' });
-        const objectUrl = 'video:' + URL.createObjectURL(videoBlob);
-        setUploadedImages(prev => [...prev, objectUrl].slice(0, 5));
-        showToast('Video clip recorded beautifully! 🎥');
-        stopCameraStream();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64data = reader.result as string;
+          const finalUrl = 'video:' + base64data;
+          setUploadedImages(prev => [...prev, finalUrl].slice(0, 5));
+          showToast('Video clip recorded beautifully! 🎥');
+          stopCameraStream();
+        };
+        reader.onerror = () => {
+          showToast('Failed to process recorded video clip.');
+        };
+        reader.readAsDataURL(videoBlob);
       };
 
       mediaRecorderRef.current = recorder;
@@ -2306,16 +2374,21 @@ const PostPage = () => {
                 accept="image/*,video/*" 
                 capture="environment" 
                 className="hidden" 
-                onChange={(e) => {
+                onChange={async (e) => {
                   const files = e.target.files;
                   if (files && files.length > 0) {
                     const file: any = files[0];
-                    const objectUrl = URL.createObjectURL(file);
-                    const isVideo = file.type.startsWith('video/');
-                    const finalUrl = isVideo ? 'video:' + objectUrl : objectUrl;
-                    setUploadedImages(prev => [...prev, finalUrl].slice(0, 5));
-                    showToast(isVideo ? 'Video recorded natively and uploaded! 🎥' : 'Photo captured natively and uploaded! 📸');
-                    stopCameraStream();
+                    try {
+                      const dataUrl = await readFileAsDataURL(file);
+                      const isVideo = file.type.startsWith('video/');
+                      const finalUrl = isVideo ? 'video:' + dataUrl : dataUrl;
+                      setUploadedImages(prev => [...prev, finalUrl].slice(0, 5));
+                      showToast(isVideo ? 'Video recorded natively and uploaded! 🎥' : 'Photo captured natively and uploaded! 📸');
+                      stopCameraStream();
+                    } catch (err) {
+                      console.error('File reading failed', err);
+                      showToast('Failed to load file.');
+                    }
                   }
                 }}
               />
@@ -2326,22 +2399,27 @@ const PostPage = () => {
                 accept="image/*,video/*" 
                 multiple 
                 className="hidden" 
-                onChange={(e) => {
+                onChange={async (e) => {
                   const files = e.target.files;
                   if (files) {
                     const fileArr = Array.from(files);
                     if (uploadedImages.length + fileArr.length > 5) {
                       showToast('Maximum 5 media items allowed');
                     }
-                    const newMedia: string[] = [];
-                    fileArr.forEach((file: any) => {
-                      const objectUrl = URL.createObjectURL(file);
-                      const isVideo = file.type.startsWith('video/');
-                      const finalUrl = isVideo ? 'video:' + objectUrl : objectUrl;
-                      newMedia.push(finalUrl);
-                    });
-                    setUploadedImages(prev => [...prev, ...newMedia].slice(0, 5));
-                    showToast(`Loaded ${fileArr.length} files from device! 📁`);
+                    try {
+                      const newMedia: string[] = [];
+                      for (const file of fileArr as any[]) {
+                        const dataUrl = await readFileAsDataURL(file);
+                        const isVideo = file.type.startsWith('video/');
+                        const finalUrl = isVideo ? 'video:' + dataUrl : dataUrl;
+                        newMedia.push(finalUrl);
+                      }
+                      setUploadedImages(prev => [...prev, ...newMedia].slice(0, 5));
+                      showToast(`Loaded ${fileArr.length} files from device! 📁`);
+                    } catch (err) {
+                      console.error('Files reading failed', err);
+                      showToast('Failed to load files.');
+                    }
                   }
                 }}
               />
@@ -3758,7 +3836,7 @@ const ProfilePage = () => {
 const ChatPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as { listing?: Listing; recipient?: User } | null;
+  const state = location.state as { listing?: Listing; wishlist?: any; recipient?: User } | null;
   const [activeUser] = useAuth();
   const [chats, setChats] = useChats();
 
@@ -3766,6 +3844,7 @@ const ChatPage = () => {
   const fallbackRecipient = mockUsers.find(u => u.name.includes("Priya")) || mockUsers[0];
   const recipient = state?.recipient || fallbackRecipient;
   const listing = state?.listing;
+  const wishlist = state?.wishlist;
 
   const recipientNameClean = recipient.name || 'Priya S.';
   const recipientAvatar = recipient.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(recipientNameClean)}`;
@@ -3968,7 +4047,30 @@ const ChatPage = () => {
         </div>
       )}
 
-      {!listing && (
+      {!listing && wishlist && (
+        <div className="p-6 bg-brand-accent/30 rounded-[32px] border border-brand-primary/10 shadow-sm relative overflow-hidden group text-left">
+          <div className="absolute -right-6 -top-6 w-20 h-20 bg-brand-primary/5 rounded-full blur-2xl"></div>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[10px] font-bold text-brand-primary uppercase tracking-widest">Wishlist Board Reference</span>
+            <Repeat size={14} className="text-brand-primary" />
+          </div>
+          <div className="text-sm font-bold mb-3 flex items-center gap-3">
+            <span className="text-xl">🔍</span> Looking For: {wishlist.title}
+          </div>
+          <p className="text-[10px] text-text-charcoal/60 leading-relaxed mb-4 line-clamp-2">{wishlist.description}</p>
+          <div className="text-[10px] font-extrabold text-brand-primary uppercase tracking-wider mb-4">
+            Est. Budget: ₹{wishlist.estimatedValue?.toLocaleString() || wishlist.budget?.toLocaleString() || '0'}
+          </div>
+          <button 
+            onClick={() => navigate('/')}
+            className="w-full py-3 bg-brand-primary text-white rounded-2xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-brand-primary/20 transition-all hover:scale-[1.02] active:scale-98 cursor-pointer animate-pulse"
+          >
+            Go to Discover Feed
+          </button>
+        </div>
+      )}
+
+      {!listing && !wishlist && (
         <div className="p-6 bg-brand-accent/30 rounded-[32px] border border-brand-primary/10 shadow-sm relative overflow-hidden group text-left">
           <div className="absolute -right-6 -top-6 w-20 h-20 bg-brand-primary/5 rounded-full blur-2xl"></div>
           <div className="flex items-center justify-between mb-4">
@@ -4075,9 +4177,38 @@ const ListingDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const listingId = id || 'l1';
   const [listings] = useListings();
-  const listing = listings.find(l => l.id === listingId) || listings[0];
+  const [listing, setListing] = useState<Listing | null>(() => {
+    return listings.find(l => l.id === listingId) || null;
+  });
+
+  useEffect(() => {
+    const cached = listings.find(l => l.id === listingId);
+    if (cached) {
+      setListing(cached);
+    } else {
+      fetch(getApiUrl(`/api/listings/${listingId}`))
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error('Listing not found');
+        })
+        .then(data => {
+          setListing(data);
+          saveLocalListings((prev: Listing[]) => {
+            if (prev.find(l => l.id === data.id)) return prev;
+            return [...prev, data];
+          });
+        })
+        .catch(err => {
+          console.error('Failed to retrieve listing:', err);
+          if (listings.length > 0) {
+            setListing(listings[0]);
+          }
+        });
+    }
+  }, [listingId, listings]);
+
   const [activeUser] = useAuth();
-  const user = getActiveUserById(listing.userId);
+  const user = listing ? getActiveUserById(listing.userId) : null;
 
   // Dynamic AI Barter Intelligence State
   interface BarterIntelligence {
@@ -4142,13 +4273,14 @@ const ListingDetailPage = () => {
   
   // Instant Match Simulation
   const myListings = listings.filter(l => l.userId === activeUser?.id || l.userId === 'me');
-  const isDirectMatch = myListings.some(myL => 
+  const isDirectMatch = listing ? myListings.some(myL => 
     listing.wants.some(w => myL.title.toLowerCase().includes(w.toLowerCase())) ||
     (myL.openToNegotiate && myL.negotiableCategories.includes(listing.category))
-  );
+  ) : false;
 
   // Load dynamic AI Barter Intelligence prediction
   useEffect(() => {
+    if (!listing) return;
     let active = true;
     setLoadingIntel(true);
     fetch(getApiUrl('/api/ai/barter-intelligence'), {
@@ -4198,6 +4330,15 @@ const ListingDetailPage = () => {
       case 'best': return 'Prime Exchange Candidate';
     }
   };
+
+  if (!listing || !user) {
+    return (
+      <div className="bg-surface-beige min-h-screen flex flex-col items-center justify-center">
+        <div className="w-12 h-12 rounded-full border-4 border-dashed border-brand-primary animate-spin"></div>
+        <p className="text-xs font-bold uppercase tracking-widest text-text-charcoal/40 mt-4">Loading Listing Details...</p>
+      </div>
+    );
+  }
 
   const handleApplyIcebreaker = () => {
     const text = getSelectedInsightText();
@@ -4603,6 +4744,9 @@ const ListingDetailPage = () => {
   );
 };
 
+
+
+
 const OfferPage = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -4613,6 +4757,58 @@ const OfferPage = () => {
   const [activeUser] = useAuth();
   const targetUser = getActiveUserById(targetListing.userId);
 
+  // User inventory items
+  const myInventory = listings.filter(l => l.userId === activeUser?.id || l.userId === 'me');
+
+  // Matching check
+  const isSuggested = (item: Listing) => {
+    if (targetListing.openToNegotiate) return true;
+    if (targetListing.negotiableCategories && targetListing.negotiableCategories.includes(item.category)) return true;
+    if (targetListing.wants && targetListing.wants.some(w => {
+      const lowerW = w.toLowerCase();
+      return item.title.toLowerCase().includes(lowerW) || 
+             lowerW.includes(item.title.toLowerCase()) || 
+             lowerW === 'open to negotiate' || 
+             lowerW === 'open to anything' || 
+             lowerW === 'fair swap';
+    })) return true;
+    return false;
+  };
+
+  // State values
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [serviceDescription, setServiceDescription] = useState('');
+  const [hasCashTopper, setHasCashTopper] = useState(false);
+  const [cashAmount, setCashAmount] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3000);
+  };
+
+  const handleSubmitOffer = () => {
+    let initialMessage = '';
+    if (selectedOfferType === 'goods') {
+      if (!selectedItemId) {
+        triggerToast('Select an item from your inventory to offer!');
+        return;
+      }
+      const selectedItem = myInventory.find(item => item.id === selectedItemId);
+      if (selectedItem) {
+        initialMessage = `Hi ${targetUser?.name?.split(' ')[0] || 'there'}! I'd love to offer my "${selectedItem.title}" (Est. Value: ₹${selectedItem.estimatedValue.toLocaleString()}) in exchange for your "${targetListing.title}". Let's barter! 🤝`;
+      }
+    } else {
+      if (!serviceDescription.trim()) {
+        triggerToast('Describe the services or skills you are offering!');
+        return;
+      }
+      initialMessage = `Hi ${targetUser?.name?.split(' ')[0] || 'there'}! I want to offer my services: "${serviceDescription}"${hasCashTopper && cashAmount ? ` plus a cash topper of ₹${cashAmount}` : ''} in exchange for your "${targetListing.title}". Let's coordinate this swap! 🤝`;
+    }
+
+    navigate('/chat', { state: { listing: targetListing, recipient: targetUser, initialMessage } });
+  };
+
   return (
     <div className="bg-surface-beige min-h-screen pb-32">
       <header className="p-6 border-b border-border-sleek bg-white flex items-center justify-between sticky top-0 z-10">
@@ -4622,6 +4818,12 @@ const OfferPage = () => {
         </div>
         <HelpCircle size={20} className="text-text-charcoal/30" />
       </header>
+
+      {toastMessage && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-text-charcoal text-white text-xs font-bold px-6 py-3 rounded-full shadow-lg flex items-center gap-2 animate-fade-in">
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       <div className="p-6 space-y-8">
         <div>
@@ -4635,7 +4837,7 @@ const OfferPage = () => {
                )}
             </div>
             <div className="flex flex-col justify-center">
-              <p className="text-sm font-bold">{targetListing.title}</p>
+              <p className="text-sm font-bold text-left">{targetListing.title}</p>
               <p className="text-[10px] font-bold text-brand-primary bg-brand-accent/50 inline-block self-start px-2 py-0.5 rounded mt-1">Est. Value: ₹{targetListing.estimatedValue.toLocaleString()}</p>
             </div>
           </div>
@@ -4674,29 +4876,107 @@ const OfferPage = () => {
               className="bg-white p-8 rounded-[32px] border border-border-sleek shadow-sm"
             >
               {selectedOfferType === 'goods' ? (
-                <div className="flex flex-col items-center justify-center text-center py-6">
-                  <div className="w-16 h-16 bg-brand-accent/30 rounded-full flex items-center justify-center mb-4 border-2 border-dashed border-brand-primary/20 text-brand-primary">
-                    <PlusSquare size={28} />
+                myInventory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-center py-6">
+                    <div className="w-16 h-16 bg-brand-accent/30 rounded-full flex items-center justify-center mb-4 border-2 border-dashed border-brand-primary/20 text-brand-primary">
+                      <PlusSquare size={28} />
+                    </div>
+                    <h4 className="text-sm font-bold mb-1">Select an item</h4>
+                    <p className="text-[10px] text-text-charcoal/40 max-w-[200px] leading-relaxed italic">You don't have matching items. List something new to trade!</p>
+                    <button 
+                      onClick={() => navigate('/post')}
+                      className="mt-6 px-6 py-2 bg-brand-primary text-white rounded-full text-[10px] font-bold uppercase tracking-widest shadow-lg shadow-brand-primary/20"
+                    >
+                      List New Item
+                    </button>
                   </div>
-                  <h4 className="text-sm font-bold mb-1">Select an item</h4>
-                  <p className="text-[10px] text-text-charcoal/40 max-w-[200px] leading-relaxed italic">You don't have matching items. List something new to trade!</p>
-                  <button className="mt-6 px-6 py-2 bg-brand-primary text-white rounded-full text-[10px] font-bold uppercase tracking-widest shadow-lg shadow-brand-primary/20">List New Item</button>
-                </div>
+                ) : (
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-text-charcoal uppercase tracking-wider mb-2 text-left">Your Inventory ({myInventory.length} items)</h4>
+                    <div className="max-h-[300px] overflow-y-auto space-y-3 pr-1">
+                      {myInventory.map((item) => {
+                        const isDirect = isSuggested(item);
+                        const isSelected = selectedItemId === item.id;
+                        return (
+                          <div 
+                            key={item.id} 
+                            onClick={() => setSelectedItemId(isSelected ? null : item.id)}
+                            className={cn(
+                              "p-4 rounded-2xl border transition-all flex items-center justify-between cursor-pointer select-none",
+                              isSelected 
+                                ? "bg-brand-accent/40 border-brand-primary shadow-sm" 
+                                : "bg-surface-beige/30 border-border-sleek hover:bg-surface-beige/50"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-12 h-12 rounded-xl overflow-hidden bg-surface-beige shrink-0 border border-slate-100">
+                                {isVideoUrl(item.images[0]) ? (
+                                  <video src={getCleanMediaUrl(item.images[0])} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+                                ) : (
+                                  <img src={getCleanMediaUrl(item.images[0])} className="w-full h-full object-cover" />
+                                )}
+                              </div>
+                              <div className="text-left">
+                                <p className="text-xs font-bold text-text-charcoal">{item.title}</p>
+                                <div className="flex gap-2 items-center mt-1">
+                                  <span className="text-[9px] font-mono text-brand-primary font-bold">₹{item.estimatedValue.toLocaleString()}</span>
+                                  {isDirect && (
+                                    <span className="text-[8px] font-black uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                      Suggested Swap 🌟
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className={cn(
+                              "w-5 h-5 rounded-full border flex items-center justify-center transition-all",
+                              isSelected ? "border-brand-primary bg-brand-primary text-white" : "border-slate-300"
+                            )}>
+                              {isSelected && <span className="text-[10px]">✓</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )
               ) : (
                 <div className="space-y-6">
                   <div className="relative">
                     <textarea 
                       placeholder="Describe the services or mixed value you're offering..." 
+                      value={serviceDescription}
+                      onChange={(e) => setServiceDescription(e.target.value)}
+                      maxLength={250}
                       className="w-full min-h-[160px] p-6 bg-surface-beige border-none rounded-[28px] text-sm font-medium focus:ring-2 focus:ring-brand-primary/10 transition-all outline-none resize-none"
                     />
-                    <div className="absolute bottom-4 right-6 text-[10px] font-bold text-text-charcoal/20 uppercase">0/250</div>
+                    <div className="absolute bottom-4 right-6 text-[10px] font-bold text-text-charcoal/20 uppercase">{serviceDescription.length}/250</div>
                   </div>
-                  <div className="flex items-center justify-between p-4 bg-surface-beige rounded-2xl border border-border-sleek">
-                    <div className="flex items-center gap-3">
-                       <span className="text-lg">💰</span>
-                       <span className="text-xs font-bold text-text-charcoal/60">Include cash topper?</span>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between p-4 bg-surface-beige rounded-2xl border border-border-sleek">
+                      <div className="flex items-center gap-3">
+                         <span className="text-lg">💰</span>
+                         <span className="text-xs font-bold text-text-charcoal/60">Include cash topper?</span>
+                      </div>
+                      <input 
+                        type="checkbox" 
+                        checked={hasCashTopper}
+                        onChange={(e) => setHasCashTopper(e.target.checked)}
+                        className="w-6 h-6 accent-brand-primary rounded-lg" 
+                      />
                     </div>
-                    <input type="checkbox" className="w-6 h-6 accent-brand-primary rounded-lg" />
+                    {hasCashTopper && (
+                      <div className="flex items-center gap-3 p-4 bg-surface-beige rounded-2xl border border-border-sleek animate-fade-in">
+                        <span className="text-xs font-bold text-text-charcoal/60">Cash Amount: ₹</span>
+                        <input 
+                          type="number" 
+                          placeholder="e.g. 500" 
+                          value={cashAmount}
+                          onChange={(e) => setCashAmount(e.target.value)}
+                          className="flex-1 bg-white border border-border-sleek rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-brand-primary/15 transition-all outline-none"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -4718,7 +4998,7 @@ const OfferPage = () => {
 
       <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-xl border-t border-border-sleek safe-area-bottom z-20">
         <button 
-          onClick={() => navigate('/chat', { state: { listing: targetListing, recipient: targetUser } })}
+          onClick={handleSubmitOffer}
           className="w-full py-5 bg-text-charcoal text-white rounded-[24px] font-bold text-sm uppercase tracking-widest shadow-2xl transition-all active:scale-95 cursor-pointer"
         >
           Submit Offer
@@ -4727,6 +5007,7 @@ const OfferPage = () => {
     </div>
   );
 };
+
 
 const BottomNav = () => {
   const navigate = useNavigate();

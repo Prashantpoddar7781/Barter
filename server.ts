@@ -793,6 +793,23 @@ app.post("/api/listings", authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
+// GET /api/listings/:id - Get single listing
+app.get("/api/listings/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const listing = await prisma.listing.findUnique({
+      where: { id }
+    });
+    if (!listing) {
+      return res.status(404).json({ error: "Listing not found" });
+    }
+    res.json(listing);
+  } catch (error: any) {
+    console.error("Get listing error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // DELETE /api/listings/:id - Delete listing
 app.delete("/api/listings/:id", authenticateToken, async (req: AuthRequest, res) => {
   try {
@@ -832,6 +849,10 @@ app.get("/api/messages", authenticateToken, async (req: AuthRequest, res) => {
           { receiverId: myId }
         ]
       },
+      include: {
+        sender: true,
+        receiver: true
+      },
       orderBy: { createdAt: 'asc' }
     });
 
@@ -860,6 +881,10 @@ app.post("/api/messages", authenticateToken, async (req: AuthRequest, res) => {
         listingId: listingId || null,
         text: sanitizedText,
         timestamp: Number(Date.now())
+      },
+      include: {
+        sender: true,
+        receiver: true
       }
     });
 
