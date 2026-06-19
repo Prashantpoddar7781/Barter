@@ -300,8 +300,9 @@ app.post("/api/auth/verify-passcode", async (req, res) => {
       where: { emailOrPhone: cleanInput }
     });
 
-    // Accept local fallback 123456 only if SMTP is not configured
-    const isValidSandbox = !transporter && String(code) === "123456";
+    // Accept local fallback 123456 only if SMTP is not configured or for the demo account
+    const isDemoUser = cleanInput === "ravi@barterhub.in";
+    const isValidSandbox = (!transporter || isDemoUser) && String(code) === "123456";
     const isValidRecord = passcodeRecord && passcodeRecord.code === String(code) && passcodeRecord.expiresAt >= new Date();
 
     if (!isValidSandbox && !isValidRecord) {
