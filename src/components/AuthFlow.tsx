@@ -292,7 +292,10 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
       <div className="w-full max-w-sm mx-auto space-y-8 my-auto">
         {/* App Greeting Brand Frame */}
         <div className="text-center space-y-2">
-          <div className="w-16 h-16 rounded-[24px] bg-brand-primary text-brand-accent flex items-center justify-center mx-auto shadow-lg shadow-brand-primary/20">
+          <div 
+            onClick={() => (window as any).handleBarterhubLogoClick?.()} 
+            className="w-16 h-16 rounded-[24px] bg-brand-primary text-brand-accent flex items-center justify-center mx-auto shadow-lg shadow-brand-primary/20 cursor-pointer select-none active:scale-95 transition-transform"
+          >
             <span className="font-display font-black text-3xl">B</span>
           </div>
           <h1 className="text-3xl font-display font-black tracking-tight text-text-charcoal">BarterHub</h1>

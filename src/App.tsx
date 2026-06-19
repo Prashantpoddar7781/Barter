@@ -54,6 +54,20 @@ import { IdVerificationPage } from './components/IdVerificationPage';
 import { analytics } from './lib/analytics';
 import { sentry } from './lib/sentry';
 
+// Global click counter for Admin Portal bypass (clicks B logo 3 times)
+let logoClickCount = 0;
+let logoClickTimeout: any;
+
+(window as any).handleBarterhubLogoClick = () => {
+  logoClickCount++;
+  if (logoClickCount >= 3) {
+    logoClickCount = 0;
+    window.dispatchEvent(new CustomEvent('trigger-admin-auth'));
+  }
+  clearTimeout(logoClickTimeout);
+  logoClickTimeout = setTimeout(() => { logoClickCount = 0; }, 1500);
+};
+
 // Auth state synchronizer
 const AUTH_LISTENERS = new Set<() => void>();
 
@@ -3458,7 +3472,12 @@ const ProfilePage = () => {
               <ArrowLeft size={22} className="text-text-charcoal" />
             </button>
           ) : (
-            <div className="w-8 h-8 rounded-xl bg-brand-primary text-brand-accent flex items-center justify-center font-display font-black text-sm">B</div>
+            <div 
+              onClick={() => (window as any).handleBarterhubLogoClick?.()} 
+              className="w-8 h-8 rounded-xl bg-brand-primary text-brand-accent flex items-center justify-center font-display font-black text-sm cursor-pointer select-none active:scale-95 transition-transform"
+            >
+              B
+            </div>
           )}
           <h1 className="text-lg font-display font-bold tracking-tight text-text-charcoal">
             {isPublicProfile ? 'User Hub Card' : 'Security Panel'}
@@ -5886,8 +5905,7 @@ const BottomNav = () => {
     { label: 'Feed', icon: Compass, path: '/' },
     { label: 'Inbox', icon: MessageCircle, path: '/inbox' },
     { label: 'Post', icon: PlusSquare, path: '/post' },
-    { label: 'Me', icon: UserIcon, path: '/profile' },
-    { label: 'Admin', icon: Shield, path: '/admin' }
+    { label: 'Me', icon: UserIcon, path: '/profile' }
   ];
 
   return (
@@ -5899,7 +5917,7 @@ const BottomNav = () => {
             key={item.path}
             onClick={() => navigate(item.path)}
             className={cn(
-              "relative flex flex-col items-center gap-1.5 py-2 px-3 rounded-[20px] transition-all min-w-[44px] min-h-[44px] justify-center cursor-pointer",
+              "relative flex flex-col items-center gap-1.5 py-2 px-4 rounded-[20px] transition-all min-w-[44px] min-h-[44px] justify-center cursor-pointer",
               isActive ? "text-brand-primary bg-brand-accent/40" : "text-text-charcoal/40 hover:text-text-charcoal"
             )}
             aria-label={`${item.label} navigation tab`}
@@ -5912,6 +5930,91 @@ const BottomNav = () => {
         );
       })}
     </nav>
+  );
+};
+
+const AdminAuthModal = () => {
+  const navigate = useNavigate();
+  const [isOpen, setIsOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const handleTrigger = () => {
+      setIsOpen(true);
+      setPassword('');
+      setError(false);
+    };
+    window.addEventListener('trigger-admin-auth', handleTrigger);
+    return () => window.removeEventListener('trigger-admin-auth', handleTrigger);
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === '7781') {
+      setIsOpen(false);
+      navigate('/admin');
+    } else {
+      setError(true);
+      setPassword('');
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-6 animate-fade-in font-sans">
+      <div className="bg-white rounded-[32px] border border-slate-100 p-6 w-full max-w-xs shadow-2xl space-y-5 text-center">
+        <div className="w-12 h-12 rounded-2xl bg-brand-primary text-brand-accent flex items-center justify-center mx-auto shadow-md">
+          <Shield size={20} />
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-sm font-black uppercase tracking-wider text-text-charcoal">Console Authorization</h3>
+          <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Enter passcode to unlock platform administration</p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="password"
+            placeholder="••••"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(false);
+            }}
+            className={cn(
+              "w-full bg-slate-50 border rounded-2xl py-3.5 px-4 text-center text-lg font-black tracking-widest focus:outline-none focus:ring-4 transition-all font-mono",
+              error 
+                ? "border-red-200 focus:ring-red-100/50 text-red-500" 
+                : "border-slate-100 focus:ring-brand-primary/10 text-brand-primary"
+            )}
+            maxLength={6}
+            autoFocus
+          />
+          {error && (
+            <p className="text-red-500 font-extrabold text-[9px] uppercase tracking-wide animate-pulse">
+              Invalid Passcode
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="flex-1 py-3 bg-slate-100 text-slate-500 hover:bg-slate-200 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all cursor-pointer min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-3 bg-brand-primary text-white hover:bg-brand-primary/95 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all cursor-pointer min-h-[44px]"
+            >
+              Unlock
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 };
 
@@ -5947,6 +6050,7 @@ export default function App() {
           <Route path="/listing/:id" element={<ListingDetailPage />} />
         </Routes>
         <NavWrapper />
+        <AdminAuthModal />
       </div>
     </BrowserRouter>
   );
