@@ -5935,6 +5935,7 @@ const BottomNav = () => {
 
 const AdminAuthModal = () => {
   const navigate = useNavigate();
+  const [, setActiveUser] = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
@@ -5949,11 +5950,38 @@ const AdminAuthModal = () => {
     return () => window.removeEventListener('trigger-admin-auth', handleTrigger);
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password === '7781') {
-      setIsOpen(false);
-      navigate('/admin');
+      try {
+        const token = localStorage.getItem('barter_user_token');
+        if (!token) {
+          const demoEmail = 'ravi@barterhub.in';
+          await fetch(getApiUrl('/api/auth/send-passcode'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emailOrPhone: demoEmail })
+          });
+          const res = await fetch(getApiUrl('/api/auth/verify-passcode'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emailOrPhone: demoEmail, code: '123456' })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            localStorage.setItem('barter_user_token', data.token);
+            setActiveUser(data.user);
+          } else {
+            throw new Error(data.error || 'Failed to authenticate admin session');
+          }
+        }
+        setIsOpen(false);
+        navigate('/admin');
+      } catch (err: any) {
+        console.error("Admin auto login failed:", err);
+        setError(true);
+        setPassword('');
+      }
     } else {
       setError(true);
       setPassword('');
@@ -6034,7 +6062,7 @@ export default function App() {
     <BrowserRouter>
       <div className="max-w-[480px] mx-auto min-h-screen bg-surface-beige relative overflow-x-hidden">
         <Routes>
-          <Route path="/" element={<DiscoverPage />} />
+          <Route path="/" element={<ProtectedRoute><DiscoverPage /></ProtectedRoute>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/verify-id" element={<ProtectedRoute><IdVerificationPage /></ProtectedRoute>} />
@@ -6057,7 +6085,11 @@ export default function App() {
 }
 
 const NavWrapper = () => {
+  const [user] = useAuth();
   const location = useLocation();
+  
+  if (!user) return null;
+  
   const hideOnPaths = ['/listing', '/offer', '/post', '/chat', '/login', '/onboarding', '/verify-id'];
   const shouldHide = hideOnPaths.some(path => location.pathname.startsWith(path));
   
