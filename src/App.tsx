@@ -5211,6 +5211,12 @@ const OfferPage = () => {
 
 const AdminPanel = () => {
   const navigate = useNavigate();
+  
+  const handleClose = () => {
+    saveLocalUser(null);
+    navigate('/login');
+  };
+
   const [activeTab, setActiveTab] = useState<'metrics' | 'verifications' | 'users' | 'listings' | 'disputes' | 'broadcast' | 'logs'>('metrics');
   
   // Data states
@@ -5426,12 +5432,22 @@ const AdminPanel = () => {
             <p className="text-[8px] uppercase tracking-[0.2em] font-extrabold text-[#38bdf8] mt-1 font-mono">Platform Admin Engine</p>
           </div>
         </div>
-        <button 
-          onClick={fetchData}
-          className="text-[9px] font-black uppercase tracking-widest text-[#38bdf8] bg-slate-800/80 px-3.5 py-2 rounded-xl border border-slate-700 transition-all hover:bg-slate-800 cursor-pointer min-h-[44px] flex items-center justify-center"
-        >
-          Sync Nodes
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={fetchData}
+            className="text-[9px] font-black uppercase tracking-widest text-[#38bdf8] bg-slate-800/80 px-3.5 py-2 rounded-xl border border-slate-700 transition-all hover:bg-slate-800 cursor-pointer min-h-[44px] flex items-center justify-center"
+          >
+            Sync Nodes
+          </button>
+          <button 
+            onClick={handleClose}
+            title="Exit Admin Console"
+            className="text-red-400 hover:text-white bg-red-950/40 hover:bg-red-900/60 p-2 rounded-xl border border-red-900/40 transition-all cursor-pointer min-w-[44px] min-h-[44px] flex items-center justify-center animate-fade-in"
+            aria-label="Exit Admin Console"
+          >
+            <X size={18} />
+          </button>
+        </div>
       </header>
 
       {/* Horizontal Nav Bar Tabs */}
@@ -6090,7 +6106,7 @@ const NavWrapper = () => {
   
   if (!user) return null;
   
-  const hideOnPaths = ['/listing', '/offer', '/post', '/chat', '/login', '/onboarding', '/verify-id'];
+  const hideOnPaths = ['/listing', '/offer', '/post', '/chat', '/login', '/onboarding', '/verify-id', '/admin'];
   const shouldHide = hideOnPaths.some(path => location.pathname.startsWith(path));
   
   if (shouldHide) return null;
