@@ -42,13 +42,17 @@ import {
   Brain,
   TrendingUp,
   EyeOff,
-  AlertTriangle
+  AlertTriangle,
+  Shield,
+  FileText
 } from 'lucide-react';
 import { cn, getApiUrl } from './lib/utils';
 import { Listing, User, Offer } from './types';
 import { mockListings, currentUser, mockOffers, mockUsers } from './lib/mockData';
 import { LoginPage, OnboardingPage } from './components/AuthFlow';
 import { IdVerificationPage } from './components/IdVerificationPage';
+import { analytics } from './lib/analytics';
+import { sentry } from './lib/sentry';
 
 // Auth state synchronizer
 const AUTH_LISTENERS = new Set<() => void>();
@@ -447,6 +451,15 @@ const DiscoverPage = () => {
   const [listings] = useListings();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeUser] = useAuth();
+
+  useEffect(() => {
+    if (searchQuery.trim().length > 2) {
+      const delayDebounceFn = setTimeout(() => {
+        analytics.track('search_query_submitted', { query: searchQuery });
+      }, 1000);
+      return () => clearTimeout(delayDebounceFn);
+    }
+  }, [searchQuery]);
 
   const userObj = activeUser || defaultLocalUser;
 
@@ -861,13 +874,17 @@ const DiscoverPage = () => {
             return (
               <button
                 key={cat.name}
-                onClick={() => setActiveCategory(cat.name)}
+                onClick={() => {
+                  setActiveCategory(cat.name);
+                  analytics.track('filter_category_selected', { category: cat.name });
+                }}
                 className={cn(
-                  "flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[10px] font-extrabold tracking-wider uppercase whitespace-nowrap transition-all border cursor-pointer select-none",
+                  "flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[10px] font-extrabold tracking-wider uppercase whitespace-nowrap transition-all border cursor-pointer select-none min-h-[44px]",
                   isActive 
                     ? "bg-brand-primary text-white border-brand-primary shadow-sm" 
                     : "bg-surface-beige text-text-charcoal/70 border-border-sleek hover:bg-white"
                 )}
+                aria-label={`Filter by ${cat.name}`}
               >
                 <span>{cat.icon}</span>
                 <span>{cat.name}</span>
@@ -3050,9 +3067,17 @@ const InboxHub = () => {
               exit={{ opacity: 0, x: -10 }}
               className="space-y-4"
             >
-              {mockOffers.map(offer => (
-                <TradeCard key={offer.id} offer={offer} />
-              ))}
+              {mockOffers.length > 0 ? (
+                mockOffers.map(offer => (
+                  <TradeCard key={offer.id} offer={offer} />
+                ))
+              ) : (
+                <div className="text-center py-12 bg-white rounded-[32px] border border-border-sleek p-6">
+                  <p className="text-3xl mb-2">📥</p>
+                  <p className="text-sm font-bold text-text-charcoal">No trade offers received</p>
+                  <p className="text-xs text-text-charcoal/40 mt-1">Offers sent by other users for your listings will appear here!</p>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -3158,15 +3183,62 @@ const InboxHub = () => {
 
 const ProfilePage = () => {
   const navigate = useNavigate();
+  const { id: paramId } = useParams();
   const [listings, setListings] = useListings();
   const [activeUser, setActiveUser] = useAuth();
   
   const [toastMsg, setToastMsg] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [newNameVal, setNewNameVal] = useState('');
+  const [profileUser, setProfileUser] = useState<User | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
-  const user = activeUser || defaultLocalUser;
-  const myListings = listings.filter(l => l.userId === user.id || l.userId === 'me');
+  const currentUserObj = activeUser || defaultLocalUser;
+  const isPublicProfile = !!paramId && paramId !== currentUserObj.id && paramId !== 'me';
+
+  useEffect(() => {
+    if (isPublicProfile) {
+      setIsLoadingProfile(true);
+      const fetchPublicUser = async () => {
+        try {
+          const res = await fetch(getApiUrl(`/api/users/${paramId}`));
+          if (res.ok) {
+            const data = await res.json();
+            setProfileUser(data);
+          } else {
+            const matchedMock = mockUsers.find(u => u.id === paramId);
+            if (matchedMock) {
+              setProfileUser(matchedMock);
+            } else {
+              showToast("User profile not found in database. 👤");
+            }
+          }
+        } catch (err) {
+          const matchedMock = mockUsers.find(u => u.id === paramId);
+          if (matchedMock) {
+            setProfileUser(matchedMock);
+          } else {
+            console.error("Error fetching public user profile:", err);
+          }
+        } finally {
+          setIsLoadingProfile(false);
+        }
+      };
+      fetchPublicUser();
+    } else {
+      setProfileUser(currentUserObj);
+    }
+  }, [paramId, activeUser]);
+
+  const user = profileUser || currentUserObj;
+  const myListings = listings.filter(l => l.userId === user.id || (!isPublicProfile && (l.userId === 'me' || l.userId === currentUserObj.id)));
+
+  // Track profile view event
+  useEffect(() => {
+    if (user && user.id) {
+      analytics.track('view_profile', { profileUserId: user.id, isOwn: !isPublicProfile });
+    }
+  }, [user.id, isPublicProfile]);
 
   // Initialize name input field
   useState(() => {
@@ -3174,6 +3246,7 @@ const ProfilePage = () => {
   });
 
   const handleLogout = () => {
+    analytics.track('user_logout', { userId: currentUserObj.id });
     setActiveUser(null);
     navigate('/');
   };
@@ -3367,17 +3440,53 @@ const ProfilePage = () => {
         )}
       </AnimatePresence>
 
-      <header className="p-6 flex justify-between items-center bg-white border-b border-border-sleek sticky top-0 bg-white/90 backdrop-blur-md z-35">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-brand-primary text-brand-accent flex items-center justify-center font-display font-black text-sm">B</div>
-          <h1 className="text-lg font-display font-bold tracking-tight text-text-charcoal">Security Panel</h1>
+      {isLoadingProfile && (
+        <div className="bg-white min-h-screen flex flex-col items-center justify-center p-6 text-center">
+          <span className="w-10 h-10 border-4 border-brand-primary border-t-transparent rounded-full animate-spin mb-4"></span>
+          <p className="text-xs uppercase font-black tracking-widest text-text-charcoal/40">Syncing user profile details...</p>
         </div>
-        <button 
-          onClick={handleLogout}
-          className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-xl border border-red-200 transition-all cursor-pointer"
-        >
-          Logout Session
-        </button>
+      )}
+
+      <header className="p-6 flex justify-between items-center bg-white border-b border-border-sleek sticky top-0 bg-white/90 backdrop-blur-md z-35">
+        <div className="flex items-center gap-3">
+          {isPublicProfile ? (
+            <button 
+              onClick={() => navigate(-1)} 
+              className="p-2 -ml-2 hover:bg-surface-beige rounded-xl transition-all min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
+              aria-label="Go back"
+            >
+              <ArrowLeft size={22} className="text-text-charcoal" />
+            </button>
+          ) : (
+            <div className="w-8 h-8 rounded-xl bg-brand-primary text-brand-accent flex items-center justify-center font-display font-black text-sm">B</div>
+          )}
+          <h1 className="text-lg font-display font-bold tracking-tight text-text-charcoal">
+            {isPublicProfile ? 'User Hub Card' : 'Security Panel'}
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const url = `${window.location.origin}/profile/${user.id}`;
+              navigator.clipboard.writeText(url);
+              analytics.track('share_profile_clicked', { targetUserId: user.id });
+              showToast("Profile link copied! 📋");
+            }}
+            className="p-2 hover:bg-surface-beige rounded-xl transition-all min-w-[44px] min-h-[44px] flex items-center justify-center border border-border-sleek cursor-pointer"
+            aria-label="Share profile link"
+          >
+            <Share2 size={16} className="text-text-charcoal" />
+          </button>
+          {!isPublicProfile && (
+            <button 
+              onClick={handleLogout}
+              className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-xl border border-red-200 transition-all cursor-pointer min-h-[44px]"
+              aria-label="Logout session"
+            >
+              Logout
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="p-6 flex flex-col items-center">
@@ -3393,31 +3502,33 @@ const ProfilePage = () => {
             {user.avatar ? (
               <img src={user.avatar} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
-              <span className="text-3xl font-display font-bold text-brand-primary">{getInitials(user.name)}</span>
+              <span className="text-3xl font-display font-bold text-brand-primary">{getInitials(user.name || '')}</span>
             )}
-            <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer">
-              <Camera size={18} className="text-white" />
-              <input 
-                type="file" 
-                className="hidden" 
-                onChange={(e) => {
-                  const files = e.target.files;
-                  if (files && files.length > 0) {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      if (typeof reader.result === 'string') {
-                        setActiveUser(prev => prev ? { ...prev, avatar: reader.result as string } : null);
-                        showToast('Custom Avatar locked in securely! 📸');
-                      }
-                    };
-                    reader.readAsDataURL(files[0]);
-                  }
-                }}
-              />
-            </label>
+            {!isPublicProfile && (
+              <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer">
+                <Camera size={18} className="text-white" />
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (files && files.length > 0) {
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setActiveUser(prev => prev ? { ...prev, avatar: reader.result as string } : null);
+                          showToast('Custom Avatar locked in securely! 📸');
+                        }
+                      };
+                      reader.readAsDataURL(files[0]);
+                    }
+                  }}
+                />
+              </label>
+            )}
           </div>
           
-          {editingName ? (
+          {editingName && !isPublicProfile ? (
             <div className="flex gap-2 items-center w-full max-w-xs mb-1 bg-white p-1 rounded-xl border border-border-sleek">
               <input 
                 type="text" 
@@ -3436,18 +3547,33 @@ const ProfilePage = () => {
           ) : (
             <h2 className="text-xl font-display font-black text-text-charcoal flex items-center gap-1.5 mb-1">
               {user.name || 'Anonymous User'}
-              <button 
-                onClick={() => { setNewNameVal(user.name || ''); setEditingName(true); }}
-                className="text-text-charcoal/30 hover:text-brand-primary text-xs font-normal"
-              >
-                ✏️
-              </button>
+              {!isPublicProfile && (
+                <button 
+                  onClick={() => { setNewNameVal(user.name || ''); setEditingName(true); }}
+                  className="text-text-charcoal/30 hover:text-brand-primary text-xs font-normal"
+                >
+                  ✏️
+                </button>
+              )}
             </h2>
           )}
           
-          <p className="text-[11px] text-text-charcoal/50 flex items-center gap-1.5 font-bold uppercase tracking-wider mb-5">
+          <p className="text-[11px] text-text-charcoal/50 flex items-center gap-1.5 font-bold uppercase tracking-wider mb-3">
             <MapPin size={12} className="text-brand-primary" /> {user.location || 'No active location mapped'}
           </p>
+
+          {isPublicProfile && (
+            <button
+              onClick={() => {
+                analytics.track('propose_trade_clicked', { targetUserId: user.id });
+                navigate(`/chat?userId=${user.id}`);
+              }}
+              className="mb-4 px-5 py-2.5 bg-brand-primary text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md hover:bg-brand-primary/95 transition-all min-h-[44px] cursor-pointer flex items-center justify-center"
+              aria-label="Propose trade offer to user"
+            >
+              Propose Trade Offer 🤝
+            </button>
+          )}
 
           <div className="grid grid-cols-4 w-full border-t border-border-sleek pt-5 text-center">
             <div>
@@ -3822,12 +3948,59 @@ const ProfilePage = () => {
                 </div>
               ))
             ) : (
-              <div className="p-8 text-center text-text-charcoal/40 uppercase tracking-widest font-bold text-[10px]">
-                No listings cataloged yet
+              <div className="p-8 text-center space-y-4 bg-white rounded-2xl">
+                <span className="text-4xl block animate-bounce" role="img" aria-label="package">📦</span>
+                <p className="text-xs font-bold text-text-charcoal">Your inventory is empty</p>
+                <p className="text-[10px] text-text-charcoal/50 leading-relaxed max-w-[200px] mx-auto font-medium">Post your first listing to start swapping with others in your local community!</p>
+                <button 
+                  onClick={() => navigate('/post')}
+                  className="px-6 py-2.5 bg-brand-primary text-white text-[9.5px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-brand-primary/10 transition-all hover:scale-105 active:scale-95 cursor-pointer min-h-[44px]"
+                  aria-label="Post first listing"
+                >
+                  Post first listing
+                </button>
               </div>
             )}
           </div>
         </div>
+
+        {!isPublicProfile && (
+          <div className="bg-white p-5 rounded-[32px] border border-border-sleek shadow-sm space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-3 bg-brand-primary rounded-full"></span>
+              <h3 className="text-[10px] font-black uppercase tracking-[0.15em] text-text-charcoal/40">Developer & Platform Admin</h3>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  analytics.track('admin_panel_navigated');
+                  navigate('/admin');
+                }}
+                className="py-3 px-2 bg-brand-accent/30 hover:bg-brand-accent/50 text-brand-primary text-[10px] font-black uppercase rounded-xl tracking-wider transition-all min-h-[44px] flex items-center justify-center gap-1.5 cursor-pointer border border-brand-primary/10"
+                aria-label="Navigate to admin dashboard"
+              >
+                <Shield size={14} /> Admin Dashboard
+              </button>
+
+              <button
+                onClick={() => {
+                  analytics.track('test_crash_triggered');
+                  try {
+                    throw new Error("Simulated client-side crash test trigger.");
+                  } catch (err: any) {
+                    sentry.captureException(err, { page: 'ProfilePage', trigger: 'test_button' });
+                    showToast("Sentry Exception Captured! 🚨 Check logs.");
+                  }
+                }}
+                className="py-3 px-2 bg-red-50 hover:bg-red-100 text-red-600 text-[10px] font-black uppercase rounded-xl tracking-wider transition-all min-h-[44px] flex items-center justify-center gap-1.5 cursor-pointer border border-red-200/50"
+                aria-label="Trigger crash test"
+              >
+                💥 Trigger Crash Test
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4393,7 +4566,16 @@ const ListingDetailPage = () => {
             >
               <AlertTriangle size={22} />
             </button>
-            <button className="w-12 h-12 bg-black/20 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/15 transition-all active:scale-90">
+            <button 
+              onClick={() => {
+                const url = `${window.location.origin}/listing/${listing.id}`;
+                navigator.clipboard.writeText(url);
+                analytics.track('share_listing_clicked', { listingId: listing.id });
+                triggerToast("Listing link copied! 📋");
+              }}
+              className="w-12 h-12 bg-black/20 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white border border-white/15 transition-all active:scale-90 cursor-pointer min-h-[44px]"
+              aria-label="Share listing link"
+            >
               <Share2 size={22} />
             </button>
           </div>
@@ -5008,6 +5190,692 @@ const OfferPage = () => {
   );
 };
 
+const AdminPanel = () => {
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'metrics' | 'verifications' | 'users' | 'listings' | 'disputes' | 'broadcast' | 'logs'>('metrics');
+  
+  // Data states
+  const [metrics, setMetrics] = useState<any>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [adminListings, setAdminListings] = useState<Listing[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
+  const [analyticsLogs, setAnalyticsLogs] = useState<any[]>([]);
+  const [sentryLogs, setSentryLogs] = useState<any[]>([]);
+  
+  // Broadcast states
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastSegment, setBroadcastSegment] = useState<'all' | 'verified' | 'unverified'>('all');
+  
+  // Status states
+  const [isLoading, setIsLoading] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3000);
+  };
+
+  const getAdminToken = () => localStorage.getItem('barter_user_token');
+
+  // Fetch all admin data
+  const fetchData = async () => {
+    setIsLoading(true);
+    const token = getAdminToken();
+    if (!token) return;
+
+    try {
+      // Metrics
+      const mRes = await fetch(getApiUrl('/api/admin/metrics'), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (mRes.ok) setMetrics(await mRes.json());
+
+      // Users
+      const uRes = await fetch(getApiUrl('/api/admin/users'), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (uRes.ok) setUsers(await uRes.json());
+
+      // Listings
+      const lRes = await fetch(getApiUrl('/api/admin/listings'), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (lRes.ok) setAdminListings(await lRes.json());
+
+      // Reports
+      const rRes = await fetch(getApiUrl('/api/admin/reports'), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (rRes.ok) setReports(await rRes.json());
+      
+    } catch (err) {
+      console.error("Admin fetch error:", err);
+      showToast("Error retrieving admin details.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Local logs loader
+  const loadLocalLogs = () => {
+    try {
+      const aLogs = JSON.parse(localStorage.getItem('barter_analytics_logs') || '[]');
+      const sLogs = JSON.parse(localStorage.getItem('barter_sentry_logs') || '[]');
+      setAnalyticsLogs(aLogs);
+      setSentryLogs(sLogs);
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    fetchData();
+    loadLocalLogs();
+  }, [activeTab]);
+
+  // Actions
+  const handleToggleBan = async (userId: string) => {
+    const token = getAdminToken();
+    try {
+      const res = await fetch(getApiUrl(`/api/admin/users/${userId}/ban`), {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.isSuspended ? "User suspended successfully. 🚫" : "User ban lifted. ✅");
+        fetchData();
+      }
+    } catch (err) {
+      showToast("Action failed.");
+    }
+  };
+
+  const handleVerifyUser = async (userId: string, approve: boolean) => {
+    const token = getAdminToken();
+    try {
+      const res = await fetch(getApiUrl(`/api/admin/users/${userId}/verify`), {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({ approve })
+      });
+      if (res.ok) {
+        showToast(approve ? "e-KYC verified! 🎖️" : "e-KYC request rejected. ❌");
+        fetchData();
+      }
+    } catch (err) {
+      showToast("Verification action failed.");
+    }
+  };
+
+  const handleToggleFlagListing = async (listingId: string) => {
+    const token = getAdminToken();
+    try {
+      const res = await fetch(getApiUrl(`/api/admin/listings/${listingId}/moderate`), {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(data.isFlagged ? "Listing flagged for review. 🚩" : "Listing flag removed. ✅");
+        fetchData();
+      }
+    } catch (err) {
+      showToast("Listing moderation failed.");
+    }
+  };
+
+  const handleResolveDispute = async (reportId: string, resolvedInFavorOf: 'reporter' | 'lister' | 'neither') => {
+    const token = getAdminToken();
+    try {
+      const res = await fetch(getApiUrl(`/api/admin/reports/${reportId}/resolve`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ resolvedInFavorOf })
+      });
+      if (res.ok) {
+        showToast(`Dispute resolved. Favor: ${resolvedInFavorOf} ⚖️`);
+        fetchData();
+      }
+    } catch (err) {
+      showToast("Dispute resolution failed.");
+    }
+  };
+
+  const handleSendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!broadcastTitle.trim() || !broadcastMessage.trim()) return;
+
+    const token = getAdminToken();
+    try {
+      const res = await fetch(getApiUrl('/api/admin/notifications'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: broadcastTitle,
+          message: broadcastMessage,
+          segment: broadcastSegment
+        })
+      });
+      if (res.ok) {
+        showToast("Push broadcast alert queued! 🚀");
+        setBroadcastTitle('');
+        setBroadcastMessage('');
+      }
+    } catch (err) {
+      showToast("Broadcast submission failed.");
+    }
+  };
+
+  const handleClearLogs = () => {
+    localStorage.removeItem('barter_analytics_logs');
+    localStorage.removeItem('barter_sentry_logs');
+    setAnalyticsLogs([]);
+    setSentryLogs([]);
+    showToast("System diagnostic log pools cleared. 🧹");
+  };
+
+  return (
+    <div className="bg-white min-h-screen pb-32 text-text-charcoal relative">
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div 
+            initial={{ opacity: 0, y: -40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -40, scale: 0.9 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider shadow-xl z-50 flex items-center gap-2 border border-white/20 whitespace-nowrap"
+          >
+            <Sparkles size={14} className="text-brand-accent" />
+            {toastMsg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <header className="p-6 bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-35 flex justify-between items-center shadow-lg">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-brand-primary text-brand-accent flex items-center justify-center font-display font-black text-lg shadow shadow-brand-accent/25">A</div>
+          <div className="text-left">
+            <h1 className="text-base font-display font-black tracking-tight text-white leading-none">Console Manager</h1>
+            <p className="text-[8px] uppercase tracking-[0.2em] font-extrabold text-[#38bdf8] mt-1 font-mono">Platform Admin Engine</p>
+          </div>
+        </div>
+        <button 
+          onClick={fetchData}
+          className="text-[9px] font-black uppercase tracking-widest text-[#38bdf8] bg-slate-800/80 px-3.5 py-2 rounded-xl border border-slate-700 transition-all hover:bg-slate-800 cursor-pointer min-h-[44px] flex items-center justify-center"
+        >
+          Sync Nodes
+        </button>
+      </header>
+
+      {/* Horizontal Nav Bar Tabs */}
+      <div className="bg-slate-950 text-white/60 p-2 flex gap-1.5 overflow-x-auto no-scrollbar border-b border-slate-900">
+        {[
+          { id: 'metrics', label: 'Metrics', icon: TrendingUp },
+          { id: 'verifications', label: 'KYC Vault', icon: ShieldCheck },
+          { id: 'users', label: 'Users', icon: UserIcon },
+          { id: 'listings', label: 'Ads', icon: Package },
+          { id: 'disputes', label: 'Disputes', icon: AlertTriangle },
+          { id: 'broadcast', label: 'Alerts', icon: Send },
+          { id: 'logs', label: 'Logs', icon: FileText }
+        ].map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={cn(
+                "px-3.5 py-2.5 rounded-xl text-[9px] font-extrabold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer min-h-[44px]",
+                isActive ? "bg-brand-primary text-white font-bold" : "hover:text-white"
+              )}
+              aria-label={`View admin ${tab.label}`}
+            >
+              <tab.icon size={12} /> {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="p-5 space-y-6">
+        {isLoading && (
+          <div className="bg-sky-50 text-[#0284c7] text-[10px] p-3.5 rounded-2xl border border-sky-100/50 font-semibold flex items-center justify-center gap-2 select-none animate-pulse">
+            <span className="w-4 h-4 border-2 border-[#0284c7] border-t-transparent rounded-full animate-spin"></span>
+            <span>Querying ledger nodes & synchronizing database...</span>
+          </div>
+        )}
+
+        {/* Tab 1: Metrics */}
+        {activeTab === 'metrics' && (
+          <div className="space-y-6">
+            <div className="bg-surface-beige/30 p-5 rounded-[28px] border border-border-sleek space-y-1 text-left">
+              <h3 className="text-sm font-black uppercase tracking-wider">Metrics Ledger Console</h3>
+              <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Real-time usage metrics and simulated trading revenue ledger accounts.</p>
+            </div>
+
+            {/* Matrix Cards Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-900 text-white p-4.5 rounded-3xl border border-slate-800 shadow space-y-1 text-left relative overflow-hidden">
+                <span className="absolute top-2 right-2 text-2xl opacity-10">👥</span>
+                <p className="text-[9px] uppercase font-black tracking-widest text-[#38bdf8] font-mono">Daily Active (DAU)</p>
+                <p className="text-2xl font-display font-black">{metrics?.dau || 42}</p>
+                <p className="text-[8px] text-slate-500 font-medium">Active sessions today</p>
+              </div>
+
+              <div className="bg-slate-900 text-white p-4.5 rounded-3xl border border-slate-800 shadow space-y-1 text-left relative overflow-hidden">
+                <span className="absolute top-2 right-2 text-2xl opacity-10">📦</span>
+                <p className="text-[9px] uppercase font-black tracking-widest text-[#38bdf8] font-mono">Listings Posted</p>
+                <p className="text-2xl font-display font-black">{metrics?.listings || 15}</p>
+                <p className="text-[8px] text-slate-500 font-medium">Physical ads & skills active</p>
+              </div>
+
+              <div className="bg-slate-900 text-white p-4.5 rounded-3xl border border-slate-800 shadow space-y-1 text-left relative overflow-hidden">
+                <span className="absolute top-2 right-2 text-2xl opacity-10">🤝</span>
+                <p className="text-[9px] uppercase font-black tracking-widest text-[#38bdf8] font-mono">Completed Trades</p>
+                <p className="text-2xl font-display font-black">{metrics?.disputes || 8}</p>
+                <p className="text-[8px] text-slate-500 font-medium">Swap circles closed</p>
+              </div>
+
+              <div className="bg-slate-900 text-white p-4.5 rounded-3xl border border-slate-800 shadow space-y-1 text-left relative overflow-hidden">
+                <span className="absolute top-2 right-2 text-2xl opacity-10">💵</span>
+                <p className="text-[9px] uppercase font-black tracking-widest text-[#38bdf8] font-mono">Mock Revenue</p>
+                <p className="text-2xl font-display font-black text-brand-accent">₹{(metrics?.revenue || 8400).toLocaleString()}</p>
+                <p className="text-[8px] text-slate-500 font-medium">Escrow safe trade commissions</p>
+              </div>
+            </div>
+
+            {/* Performance charts visualization */}
+            <div className="bg-slate-900 text-white p-5 rounded-[32px] border border-slate-800 space-y-4">
+              <p className="text-[9px] font-black uppercase tracking-wider font-mono text-[#38bdf8] text-left">Active Listings Growth (Surat Circle)</p>
+              <div className="h-32 flex items-end gap-3.5 border-b border-slate-800 pb-2 pt-4 px-2">
+                {[30, 45, 65, 80, 50, 95, 110].map((val, idx) => (
+                  <div key={idx} className="flex-1 flex flex-col items-center gap-1.5">
+                    <span className="text-[8px] font-mono text-slate-500">{val}</span>
+                    <div className="w-full bg-gradient-to-t from-brand-primary to-brand-accent rounded-t-md transition-all duration-500" style={{ height: `${val}px` }}></div>
+                    <span className="text-[7.5px] uppercase font-black text-slate-500">Day {idx+1}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: KYC vault (Pending Verifications) */}
+        {activeTab === 'verifications' && (
+          <div className="space-y-4">
+            <div className="bg-surface-beige/30 p-5 rounded-[28px] border border-border-sleek text-left">
+              <h3 className="text-sm font-black uppercase tracking-wider">KYC Document Reviews</h3>
+              <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Verify submitted Government Aadhaar front and back documents to certify users with verified checks.</p>
+            </div>
+
+            <div className="space-y-4">
+              {users.filter(u => u.idVerificationStatus === 'pending' || (u.aadhaarFront && !u.idVerified)).length > 0 ? (
+                users.filter(u => u.idVerificationStatus === 'pending' || (u.aadhaarFront && !u.idVerified)).map((u) => (
+                  <div key={u.id} className="bg-white border border-border-sleek rounded-[32px] p-5 space-y-4 shadow-sm text-left animate-fade-in">
+                    <div className="flex items-center gap-3">
+                      <img src={u.avatar} className="w-10 h-10 rounded-xl object-cover" />
+                      <div>
+                        <h4 className="text-xs font-black uppercase text-text-charcoal">{u.name}</h4>
+                        <p className="text-[10px] text-text-charcoal/40 font-semibold">{u.emailOrPhone}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-2.5 rounded-xl text-[10px] font-mono text-zinc-500">
+                      ID Number: <span className="font-black text-text-charcoal">Registered Aadhaar</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3.5">
+                      <div className="space-y-1">
+                        <span className="text-[8.5px] font-black uppercase tracking-wider text-text-charcoal/40 block text-center">Front Side</span>
+                        <div className="aspect-[4/3] bg-zinc-950 rounded-xl overflow-hidden border border-border-sleek relative group">
+                          {u.aadhaarFront ? (
+                            <img src={u.aadhaarFront} className="w-full h-full object-cover" alt="ID Front Doc" />
+                          ) : (
+                            <span className="text-[9px] text-zinc-500 block text-center my-auto pt-6">No file uploaded</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[8.5px] font-black uppercase tracking-wider text-text-charcoal/40 block text-center">Back Side</span>
+                        <div className="aspect-[4/3] bg-zinc-950 rounded-xl overflow-hidden border border-border-sleek relative group">
+                          {u.aadhaarBack ? (
+                            <img src={u.aadhaarBack} className="w-full h-full object-cover" alt="ID Back Doc" />
+                          ) : (
+                            <span className="text-[9px] text-zinc-500 block text-center my-auto pt-6">No file uploaded</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2.5 pt-2">
+                      <button
+                        onClick={() => handleVerifyUser(u.id, true)}
+                        className="flex-1 py-3 bg-[#059669] text-white font-black uppercase text-[9.5px] tracking-wider rounded-xl transition-all cursor-pointer shadow-md hover:bg-[#047857] min-h-[44px]"
+                      >
+                        Approve Verify
+                      </button>
+                      <button
+                        onClick={() => handleVerifyUser(u.id, false)}
+                        className="flex-1 py-3 bg-red-50 text-red-600 font-black uppercase text-[9.5px] tracking-wider rounded-xl transition-all cursor-pointer border border-red-200 min-h-[44px]"
+                      >
+                        Reject Request
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 bg-white rounded-[32px] border border-border-sleek text-text-charcoal/30 font-bold uppercase tracking-wider text-[10px]">
+                  No verification requests pending. Vault is clean! 🏆
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Users List */}
+        {activeTab === 'users' && (
+          <div className="space-y-4">
+            <div className="bg-surface-beige/30 p-5 rounded-[28px] border border-border-sleek text-left">
+              <h3 className="text-sm font-black uppercase tracking-wider">User Directory Accounts</h3>
+              <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Inspect registered accounts. Apply immediate bans or account suspensions.</p>
+            </div>
+
+            <div className="bg-white border border-border-sleek rounded-[32px] overflow-hidden divide-y divide-border-sleek">
+              {users.map((u) => (
+                <div key={u.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-3.5 text-left">
+                    <img src={u.avatar} className="w-11 h-11 rounded-xl object-cover" />
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs font-black uppercase tracking-wider text-text-charcoal">{u.name}</h4>
+                        {u.idVerified && <span className="text-[8px] bg-emerald-100 text-emerald-700 font-black tracking-widest uppercase px-1 rounded">✓</span>}
+                      </div>
+                      <p className="text-[9.5px] text-text-charcoal/40 font-semibold">{u.emailOrPhone}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleToggleBan(u.id)}
+                    className={cn(
+                      "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px] cursor-pointer border",
+                      u.isSuspended 
+                        ? "bg-red-500 text-white border-red-500 hover:bg-red-600" 
+                        : "bg-white text-red-500 border-red-200 hover:bg-red-50"
+                    )}
+                  >
+                    {u.isSuspended ? "Banned 🚫" : "Suspend"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: Listings Moderation */}
+        {activeTab === 'listings' && (
+          <div className="space-y-4">
+            <div className="bg-surface-beige/30 p-5 rounded-[28px] border border-border-sleek text-left">
+              <h3 className="text-sm font-black uppercase tracking-wider">Item Moderation Console</h3>
+              <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Manage postings. Flag inappropriate, fake, or spam ads.</p>
+            </div>
+
+            <div className="bg-white border border-border-sleek rounded-[32px] overflow-hidden divide-y divide-border-sleek">
+              {adminListings.map((item) => (
+                <div key={item.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-3 text-left">
+                    <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-100 shrink-0">
+                      <img src={getCleanMediaUrl(item.images[0])} className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-text-charcoal truncate max-w-[180px]">{item.title}</h4>
+                      <p className="text-[9px] text-[#0284c7] font-bold font-mono">₹{item.estimatedValue.toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleToggleFlagListing(item.id)}
+                    className={cn(
+                      "px-3.5 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all min-h-[44px] cursor-pointer border",
+                      item.isFlagged || item.isModerated
+                        ? "bg-amber-500 text-white border-amber-500" 
+                        : "bg-white text-amber-600 border-amber-200 hover:bg-amber-50"
+                    )}
+                  >
+                    {item.isFlagged || item.isModerated ? "Flagged 🚩" : "Flag ad"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Disputes resolution */}
+        {activeTab === 'disputes' && (
+          <div className="space-y-4">
+            <div className="bg-surface-beige/30 p-5 rounded-[28px] border border-border-sleek text-left">
+              <h3 className="text-sm font-black uppercase tracking-wider">Disputes Resolution Ledger</h3>
+              <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Investigate reports filed by members. Inspect timeline events and resolve disputes.</p>
+            </div>
+
+            <div className="space-y-4">
+              {reports.length > 0 ? (
+                reports.map((rep) => {
+                  const reporter = getActiveUserById(rep.reporterId);
+                  const isResolved = rep.status !== 'pending';
+                  return (
+                    <div key={rep.id} className="bg-white border border-border-sleek rounded-[32px] p-5 space-y-4 shadow-sm text-left animate-fade-in">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-text-charcoal/40 font-mono">Dispute #{rep.id.substring(0, 8)}</span>
+                        <span className={cn(
+                          "px-2 py-0.5 text-[8px] font-black uppercase rounded tracking-widest",
+                          isResolved ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700 animate-pulse"
+                        )}>
+                          {rep.status}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs text-text-charcoal leading-relaxed font-semibold">
+                          <span className="font-black text-brand-primary">Reporter:</span> {reporter?.name || 'User'}
+                        </p>
+                        <p className="text-xs text-text-charcoal leading-relaxed font-semibold">
+                          <span className="font-black text-brand-primary">Reason:</span> <span className="text-red-500 font-extrabold uppercase">{rep.reason}</span>
+                        </p>
+                        {rep.details && (
+                          <div className="bg-slate-50 p-3.5 rounded-xl border border-emerald-500/10 text-[10px] text-zinc-600 italic">
+                            "{rep.details}"
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-[8px] font-black uppercase tracking-widest text-text-charcoal/40">Audit Trade Logs</p>
+                        <div className="bg-slate-900 text-slate-300 p-4.5 rounded-2xl border border-slate-800 font-mono text-[9px] leading-relaxed space-y-2 max-h-36 overflow-y-auto animate-fade-in">
+                          <p className="text-slate-500">[19:42:01] Chat Session Initiated</p>
+                          <p className="text-slate-500">[19:43:10] Offer proposed: DSLR Camera for Fujifilm</p>
+                          <p className="text-[#38bdf8]"><span className="text-emerald-400">Reporter:</span> "Hey! Is this camera in fully working condition?"</p>
+                          <p className="text-[#38bdf8]"><span className="text-brand-accent">Lister:</span> "Yes working great, lens is clean"</p>
+                          <p className="text-slate-500">[19:44:59] Deal confirmed & trade locked in ledger</p>
+                          <p className="text-red-400"><span className="text-emerald-400">Reporter:</span> [Opened Dispute] "Lister did not show up at physical Surat exchange point."</p>
+                        </div>
+                      </div>
+
+                      {!isResolved ? (
+                        <div className="flex gap-2.5 pt-2">
+                          <button
+                            onClick={() => handleResolveDispute(rep.id, 'reporter')}
+                            className="flex-1 py-3 bg-[#059669] text-white font-black uppercase text-[9px] tracking-wider rounded-xl transition-all cursor-pointer min-h-[44px]"
+                          >
+                            Favor Reporter
+                          </button>
+                          <button
+                            onClick={() => handleResolveDispute(rep.id, 'lister')}
+                            className="flex-1 py-3 bg-brand-primary text-white font-black uppercase text-[9px] tracking-wider rounded-xl transition-all cursor-pointer min-h-[44px]"
+                          >
+                            Favor Lister
+                          </button>
+                          <button
+                            onClick={() => handleResolveDispute(rep.id, 'neither')}
+                            className="px-3 bg-slate-50 text-slate-600 border border-slate-200 font-black uppercase text-[9px] tracking-wider rounded-xl transition-all cursor-pointer min-h-[44px]"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="bg-emerald-500/10 text-emerald-800 text-[10px] font-black uppercase tracking-wider p-3 rounded-xl border border-emerald-500/10 text-center flex items-center justify-center gap-1.5">
+                          ⚖️ Resolved: Favor of {rep.resolvedInFavorOf}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-12 bg-white rounded-[32px] border border-border-sleek text-text-charcoal/30 font-bold uppercase tracking-wider text-[10px]">
+                  No active disputes or reports filed. Circle is at peace! 🕊️
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 6: Broadcast Form */}
+        {activeTab === 'broadcast' && (
+          <div className="space-y-4">
+            <div className="bg-surface-beige/30 p-5 rounded-[28px] border border-border-sleek text-left">
+              <h3 className="text-sm font-black uppercase tracking-wider">Global System Alert Dispatcher</h3>
+              <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Broadcast customized push notifications and dashboard announcements to members.</p>
+            </div>
+
+            <form onSubmit={handleSendBroadcast} className="bg-white border border-border-sleek rounded-[32px] p-5 space-y-4 text-left shadow-sm">
+              <div className="space-y-1.5">
+                <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">Alert Title</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Maintenance Scheduled"
+                  value={broadcastTitle}
+                  onChange={(e) => setBroadcastTitle(e.target.value)}
+                  className="w-full bg-surface-beige border border-border-sleek rounded-xl p-3 text-xs font-bold text-text-charcoal focus:ring-2 focus:ring-brand-primary/10 transition-all outline-none"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">Target Segment</label>
+                <select
+                  value={broadcastSegment}
+                  onChange={(e: any) => setBroadcastSegment(e.target.value)}
+                  className="w-full bg-surface-beige border border-border-sleek rounded-xl p-3 text-xs font-bold text-text-charcoal focus:ring-2 focus:ring-brand-primary/10 transition-all outline-none"
+                >
+                  <option value="all">All Registered Accounts (Broad circle)</option>
+                  <option value="verified">Verified e-KYC Users Only</option>
+                  <option value="unverified">Unverified Accounts Only</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">Message Body</label>
+                <textarea
+                  placeholder="Enter details of global system push alert notification..."
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  maxLength={180}
+                  className="w-full min-h-[100px] p-4 bg-surface-beige border border-border-sleek rounded-xl text-xs font-bold focus:ring-2 focus:ring-brand-primary/10 transition-all outline-none resize-none"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-4.5 bg-slate-900 hover:bg-slate-950 text-white font-black uppercase tracking-wider text-xs rounded-2xl shadow-lg transition-all min-h-[44px] cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Send size={14} /> Send Broadcast Alert
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Tab 7: Diagnostics (Mock Mixpanel / Sentry logs) */}
+        {activeTab === 'logs' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center bg-surface-beige/30 p-5 rounded-[28px] border border-border-sleek text-left">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider">Diagnostic Console Logs</h3>
+                <p className="text-[10px] text-text-charcoal/50 leading-relaxed font-semibold">Inspect Sentry exceptions and Mixpanel analytics event telemetry.</p>
+              </div>
+              <button
+                onClick={handleClearLogs}
+                className="px-3 py-2 bg-red-50 text-red-600 font-black uppercase text-[8.5px] border border-red-200 rounded-xl transition-all cursor-pointer min-h-[44px]"
+              >
+                Clear Pools
+              </button>
+            </div>
+
+            {/* Sentry Logs Container */}
+            <div className="space-y-3.5 text-left">
+              <h4 className="text-[9.5px] font-black uppercase tracking-widest text-red-600 flex items-center gap-1">
+                🚨 Sentry Exception Queue ({sentryLogs.length})
+              </h4>
+              <div className="bg-slate-950 border border-slate-900 rounded-[28px] p-4.5 space-y-4 max-h-[300px] overflow-y-auto no-scrollbar font-mono text-[9px] text-[#f43f5e]">
+                {sentryLogs.length > 0 ? (
+                  sentryLogs.map((log, idx) => (
+                    <div key={idx} className="border-b border-slate-900 pb-3 last:border-b-0 space-y-1">
+                      <div className="flex justify-between text-slate-500 font-black text-[8px]">
+                        <span>CRASH EVENT</span>
+                        <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="font-extrabold text-white">Exception: "{log.message}"</p>
+                      {log.context && <p className="text-slate-400 text-[8.5px]">Context: {JSON.stringify(log.context)}</p>}
+                      {log.stack && (
+                        <p className="text-slate-600 leading-tight break-all font-sans whitespace-pre-wrap mt-1">
+                          {log.stack.split("\n").slice(0, 3).join("\n")}
+                        </p>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-6 text-slate-700 uppercase font-black tracking-widest text-[8px]">
+                    No exception crash logs. App is robust! 🟢
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Mixpanel Logs Container */}
+            <div className="space-y-3.5 text-left">
+              <h4 className="text-[9.5px] font-black uppercase tracking-widest text-[#06b6d4] flex items-center gap-1">
+                📊 Mixpanel/Amplitude Telemetry ({analyticsLogs.length})
+              </h4>
+              <div className="bg-slate-950 border border-slate-900 rounded-[28px] p-4.5 space-y-4 max-h-[300px] overflow-y-auto no-scrollbar font-mono text-[9px] text-cyan-400">
+                {analyticsLogs.length > 0 ? (
+                  analyticsLogs.map((log, idx) => (
+                    <div key={idx} className="border-b border-slate-900 pb-3 last:border-b-0 space-y-1">
+                      <div className="flex justify-between text-slate-500 font-black text-[8px]">
+                        <span>EVENT TRIGGER</span>
+                        <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="font-extrabold text-white">Track: "{log.eventName}"</p>
+                      {log.properties && <p className="text-slate-400 text-[8.5px]">Props: {JSON.stringify(log.properties)}</p>}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-6 text-slate-700 uppercase font-black tracking-widest text-[8px]">
+                    No user actions recorded. Idle state. 🔘
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const BottomNav = () => {
   const navigate = useNavigate();
@@ -5019,6 +5887,7 @@ const BottomNav = () => {
     { label: 'Inbox', icon: MessageCircle, path: '/inbox' },
     { label: 'Post', icon: PlusSquare, path: '/post' },
     { label: 'Me', icon: UserIcon, path: '/profile' },
+    { label: 'Admin', icon: Shield, path: '/admin' }
   ];
 
   return (
@@ -5030,12 +5899,13 @@ const BottomNav = () => {
             key={item.path}
             onClick={() => navigate(item.path)}
             className={cn(
-              "relative flex flex-col items-center gap-1.5 py-2 px-4 rounded-[20px] transition-all",
+              "relative flex flex-col items-center gap-1.5 py-2 px-3 rounded-[20px] transition-all min-w-[44px] min-h-[44px] justify-center cursor-pointer",
               isActive ? "text-brand-primary bg-brand-accent/40" : "text-text-charcoal/40 hover:text-text-charcoal"
             )}
+            aria-label={`${item.label} navigation tab`}
           >
             <item.icon size={22} className={cn(isActive && "stroke-[2.5px]")} />
-            <span className={cn("text-[8px] font-bold uppercase tracking-[0.15em]", isActive ? "opacity-100" : "opacity-0 h-0")}>
+            <span className={cn("text-[8px] font-bold uppercase tracking-[0.15em]", isActive ? "opacity-100 animate-fade-in" : "opacity-0 h-0 hidden")}>
               {item.label}
             </span>
           </button>
@@ -5070,7 +5940,9 @@ export default function App() {
           <Route path="/inbox" element={<ProtectedRoute><InboxHub /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          <Route path="/profile/:id" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="/offer/:id" element={<ProtectedRoute><OfferPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
           
           <Route path="/listing/:id" element={<ListingDetailPage />} />
         </Routes>

@@ -29,6 +29,7 @@ model User {
   aadhaarBack           String?
   interests             Json?     // Stored as JSON array
   isOnboardingCompleted Boolean   @default(false)
+  isSuspended           Boolean   @default(false)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   listings              Listing[]
@@ -147,6 +148,8 @@ model Report {
   listing     Listing? @relation(fields: [targetId], references: [id], onDelete: Cascade) // link if targetType is listing
   reason      String   // fake, inappropriate, spam, harassment, fraud, no-show
   details     String?
+  status      String   @default("pending")
+  resolvedInFavorOf String?
   createdAt   DateTime @default(now())
 
   @@index([reporterId])

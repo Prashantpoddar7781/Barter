@@ -88,7 +88,20 @@ const ai = new GoogleGenAI({
   }
 });
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+function safeJsonParse(value: any, fallback: any = []): any {
+  if (!value) return fallback;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch (_) {
+      return [value];
+    }
+  }
+  return value;
+}
 
 // Enable CORS for cross-domain requests (Vercel frontend -> Railway backend)
 app.use((req, res, next) => {
@@ -118,10 +131,20 @@ function authenticateToken(req: AuthRequest, res: express.Response, next: expres
     return res.status(401).json({ error: "Access token required" });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, decoded: any) => {
+  jwt.verify(token, JWT_SECRET, async (err, decoded: any) => {
     if (err) {
       return res.status(403).json({ error: "Invalid or expired token" });
     }
+
+    try {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: decoded.id }
+      });
+      if (dbUser && dbUser.isSuspended) {
+        return res.status(403).json({ error: "Your account has been suspended by the administrator. Contact support@barterhub.in." });
+      }
+    } catch (_) {}
+
     req.user = decoded;
     next();
   });
@@ -295,6 +318,10 @@ app.post("/api/auth/verify-passcode", async (req, res) => {
       where: { emailOrPhone: cleanInput }
     });
 
+    if (user && user.isSuspended) {
+      return res.status(403).json({ error: "Your account has been suspended by the administrator. Contact support@barterhub.in." });
+    }
+
     let isNewUser = false;
     if (!user) {
       isNewUser = true;
@@ -335,6 +362,10 @@ app.post("/api/auth/login-password", async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { emailOrPhone: cleanInput }
     });
+
+    if (user && user.isSuspended) {
+      return res.status(403).json({ error: "Your account has been suspended by the administrator. Contact support@barterhub.in." });
+    }
 
     if (!user) {
       return res.status(400).json({ error: "No user account exists for this email/phone number. Verify via OTP first." });
@@ -447,6 +478,37 @@ app.get("/api/auth/me", authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
+// GET /api/users/:id - Get current user public profile details
+app.get("/api/users/:id", async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true,
+        name: true,
+        avatar: true,
+        location: true,
+        rating: true,
+        tradesCount: true,
+        isVerified: true,
+        isTopTrader: true,
+        responseRate: true,
+        createdAt: true,
+        interests: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(user);
+  } catch (error: any) {
+    console.error("Get user public profile error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/auth/onboarding - Complete profile setup
 app.post("/api/auth/onboarding", authenticateToken, async (req: AuthRequest, res) => {
   try {
@@ -492,8 +554,8 @@ app.post("/api/auth/verify-id", authenticateToken, async (req: AuthRequest, res)
       data: {
         aadhaarFront,
         aadhaarBack,
-        idVerificationStatus: "verified", // auto-approve for simulated mockup verification
-        idVerified: true
+        idVerificationStatus: "pending",
+        idVerified: false
       }
     });
 
@@ -694,10 +756,10 @@ app.get("/api/listings", async (req, res) => {
     // Convert fields from Prisma JSON to plain JS arrays
     const formattedListings = listings.map(l => ({
       ...l,
-      images: typeof l.images === 'string' ? JSON.parse(l.images) : l.images,
-      wants: typeof l.wants === 'string' ? JSON.parse(l.wants) : l.wants,
-      negotiableCategories: typeof l.negotiableCategories === 'string' ? JSON.parse(l.negotiableCategories) : l.negotiableCategories,
-      tags: typeof l.tags === 'string' ? JSON.parse(l.tags) : l.tags
+      images: safeJsonParse(l.images),
+      wants: safeJsonParse(l.wants),
+      negotiableCategories: safeJsonParse(l.negotiableCategories),
+      tags: safeJsonParse(l.tags)
     }));
 
     res.json(formattedListings);
@@ -746,16 +808,16 @@ app.post("/api/listings", authenticateToken, async (req: AuthRequest, res) => {
         userId: req.user?.id!,
         title: sanitizedTitle,
         description: sanitizedDesc,
-        images: images, // Prisma takes JSON directly
+        images: safeJsonParse(images),
         category,
         condition: condition || (isService ? "Professional Skill" : "Excellent condition"),
         estimatedValue: Number(estimatedValue),
         location: location || "Surat, Gujarat",
         distance: distance || "0.1km away",
-        wants: wants || ["Open to negotiate"],
+        wants: safeJsonParse(wants, ["Open to negotiate"]),
         openToNegotiate: !!openToNegotiate,
-        negotiableCategories: negotiableCategories || [],
-        tags: tags || [],
+        negotiableCategories: safeJsonParse(negotiableCategories),
+        tags: safeJsonParse(tags),
         isService: !!isService,
         isFlagged: isSuspicious,
         isModerated: isUnsafeImage
@@ -806,10 +868,10 @@ app.get("/api/listings/:id", async (req, res) => {
 
     const formatted = {
       ...listing,
-      images: typeof listing.images === 'string' ? JSON.parse(listing.images) : listing.images,
-      wants: typeof listing.wants === 'string' ? JSON.parse(listing.wants) : listing.wants,
-      negotiableCategories: typeof listing.negotiableCategories === 'string' ? JSON.parse(listing.negotiableCategories) : listing.negotiableCategories,
-      tags: typeof listing.tags === 'string' ? JSON.parse(listing.tags) : listing.tags
+      images: safeJsonParse(listing.images),
+      wants: safeJsonParse(listing.wants),
+      negotiableCategories: safeJsonParse(listing.negotiableCategories),
+      tags: safeJsonParse(listing.tags)
     };
 
     res.json(formatted);
@@ -1161,8 +1223,8 @@ app.get("/api/trades/circles", async (req, res) => {
       title: l.title,
       category: l.category,
       estimatedValue: l.estimatedValue,
-      images: typeof l.images === 'string' ? JSON.parse(l.images) : l.images,
-      wants: typeof l.wants === 'string' ? JSON.parse(l.wants) : l.wants
+      images: safeJsonParse(l.images),
+      wants: safeJsonParse(l.wants)
     }));
 
     const wantsItem = (nodeX: typeof nodes[0], nodeY: typeof nodes[0]) => {
@@ -1233,6 +1295,300 @@ app.get("/api/trades/circles", async (req, res) => {
     res.json(cycles);
   } catch (error: any) {
     console.error("Get swap circles error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================= ADMIN ENDPOINTS =================
+
+// Helper to calculate or mock platform metrics
+app.get("/api/admin/metrics", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userCount = await prisma.user.count();
+    const listingCount = await prisma.listing.count();
+    const reportCount = await prisma.report.count();
+    const tradeCount = await prisma.tradeRecord.count();
+    
+    // Simulate Daily Active Users (DAU) as userCount * ~70%
+    const DAU = Math.max(1, Math.round(userCount * 0.75));
+    // Simulate platform revenue (e.g. ₹250 average fee per trade + premium options)
+    const revenue = (tradeCount * 250) + (userCount * 99);
+
+    res.json({
+      dau: DAU,
+      listingsCount: listingCount,
+      tradesCount: tradeCount,
+      reportsCount: reportCount,
+      usersCount: userCount,
+      revenue: revenue
+    });
+  } catch (error: any) {
+    console.error("Admin metrics error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET all users
+app.get("/api/admin/users", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(users);
+  } catch (error: any) {
+    console.error("Admin get users error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST toggle user suspension (ban/unban)
+app.post("/api/admin/users/:id/ban", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: { isSuspended: !user.isSuspended }
+    });
+
+    res.json({ success: true, user: updatedUser });
+  } catch (error: any) {
+    console.error("Admin toggle suspension error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST verify/approve/reject User ID Verification
+app.post("/api/admin/users/:id/verify", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body; // "approve" or "reject"
+    if (!action || (action !== "approve" && action !== "reject")) {
+      return res.status(400).json({ error: "Action must be approve or reject" });
+    }
+
+    const isApprove = action === "approve";
+    const status = isApprove ? "verified" : "unverified";
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: {
+        idVerificationStatus: status,
+        idVerified: isApprove,
+        isVerified: isApprove
+      }
+    });
+
+    // Notify user
+    await prisma.notification.create({
+      data: {
+        userId: id,
+        title: isApprove ? "e-KYC Approved! 🌟" : "e-KYC Rejected ⚠️",
+        message: isApprove 
+          ? "Your Aadhaar identity verification request has been approved. You now have a verified badge!"
+          : "Your Aadhaar verification request was rejected. Please upload clear images and try again.",
+        type: "system"
+      }
+    }).catch(() => {});
+
+    res.json({ success: true, user: updatedUser });
+  } catch (error: any) {
+    console.error("Admin verify ID error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET all listings for moderation
+app.get("/api/admin/listings", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const listings = await prisma.listing.findMany({
+      include: { user: true },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const formatted = listings.map(l => ({
+      ...l,
+      images: safeJsonParse(l.images),
+      wants: safeJsonParse(l.wants),
+      negotiableCategories: safeJsonParse(l.negotiableCategories),
+      tags: safeJsonParse(l.tags)
+    }));
+
+    res.json(formatted);
+  } catch (error: any) {
+    console.error("Admin get listings error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST toggle listing flag/moderation
+app.post("/api/admin/listings/:id/moderate", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const listing = await prisma.listing.findUnique({ where: { id } });
+    if (!listing) {
+      return res.status(404).json({ error: "Listing not found" });
+    }
+
+    const updated = await prisma.listing.update({
+      where: { id },
+      data: {
+        isFlagged: !listing.isFlagged,
+        isModerated: !listing.isModerated
+      }
+    });
+
+    res.json({ success: true, listing: updated });
+  } catch (error: any) {
+    console.error("Admin toggle flag error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET all reports (disputes center)
+app.get("/api/admin/reports", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const reports = await prisma.report.findMany({
+      include: {
+        reporter: true,
+        listing: {
+          include: { user: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(reports);
+  } catch (error: any) {
+    console.error("Admin get reports error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST resolve dispute report
+app.post("/api/admin/reports/:id/resolve", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { resolvedInFavorOf } = req.body; // "reporter" or "target"
+    if (!resolvedInFavorOf || (resolvedInFavorOf !== "reporter" && resolvedInFavorOf !== "target")) {
+      return res.status(400).json({ error: "resolvedInFavorOf must be reporter or target" });
+    }
+
+    const report = await prisma.report.findUnique({
+      where: { id },
+      include: { reporter: true }
+    });
+    if (!report) {
+      return res.status(404).json({ error: "Report not found" });
+    }
+
+    // Update Report
+    const updatedReport = await prisma.report.update({
+      where: { id },
+      data: {
+        status: "resolved",
+        resolvedInFavorOf
+      }
+    });
+
+    // Notify Reporter
+    await prisma.notification.create({
+      data: {
+        userId: report.reporterId,
+        title: "Dispute Resolved 🛡️",
+        message: `Your dispute report ID #${report.id.substring(0, 8)} has been resolved in favor of the ${resolvedInFavorOf}.`,
+        type: "system"
+      }
+    }).catch(() => {});
+
+    // Notify Target if target user can be found
+    if (report.targetType === "user") {
+      await prisma.notification.create({
+        data: {
+          userId: report.targetId,
+          title: "Dispute Investigation Closed 🛡️",
+          message: `The admin has completed the investigation regarding the dispute filed against you. Resolution: favor of ${resolvedInFavorOf}.`,
+          type: "system"
+        }
+      }).catch(() => {});
+      
+      // If reporter won, ban the fraudulent user automatically!
+      if (resolvedInFavorOf === "reporter") {
+        await prisma.user.update({
+          where: { id: report.targetId },
+          data: { isSuspended: true }
+        }).catch(() => {});
+      }
+    } else if (report.targetType === "listing") {
+      const listing = await prisma.listing.findUnique({ where: { id: report.targetId } });
+      if (listing) {
+        await prisma.notification.create({
+          data: {
+            userId: listing.userId,
+            title: "Listing Moderation Update 🛡️",
+            message: `Dispute investigation for your listing "${listing.title}" is closed. Resolution: favor of ${resolvedInFavorOf}.`,
+            type: "system"
+          }
+        }).catch(() => {});
+        
+        // If reporter won, delete the listing automatically!
+        if (resolvedInFavorOf === "reporter") {
+          await prisma.listing.delete({ where: { id: report.targetId } }).catch(() => {});
+        }
+      }
+    }
+
+    res.json({ success: true, report: updatedReport });
+  } catch (error: any) {
+    console.error("Admin resolve dispute error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST broadcast notification alerts to all users or specific segments
+app.post("/api/admin/notifications", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { segment, title, message } = req.body;
+    if (!title || !message) {
+      return res.status(400).json({ error: "Title and message are required" });
+    }
+
+    let targetUsers: { id: string }[] = [];
+    if (segment === "unverified") {
+      targetUsers = await prisma.user.findMany({
+        where: { idVerified: false },
+        select: { id: true }
+      });
+    } else if (segment === "top_traders") {
+      targetUsers = await prisma.user.findMany({
+        where: { isTopTrader: true },
+        select: { id: true }
+      });
+    } else {
+      // Default: all users
+      targetUsers = await prisma.user.findMany({
+        select: { id: true }
+      });
+    }
+
+    // Insert notifications in database
+    for (const u of targetUsers) {
+      await prisma.notification.create({
+        data: {
+          userId: u.id,
+          title,
+          message,
+          type: "system"
+        }
+      }).catch(() => {});
+    }
+
+    res.json({ success: true, message: `Broadcast sent to ${targetUsers.length} users successfully.` });
+  } catch (error: any) {
+    console.error("Admin broadcast error:", error);
     res.status(500).json({ error: error.message });
   }
 });

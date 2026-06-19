@@ -668,6 +668,8 @@ export const OnboardingPage = () => {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useAuth();
   
+  const [showIntro, setShowIntro] = useState(true);
+  const [introStep, setIntroStep] = useState(1);
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -780,6 +782,112 @@ export const OnboardingPage = () => {
       alert(err.message || 'Failed to submit onboarding profile.');
     }
   };
+
+  if (showIntro) {
+    const introSlides = [
+      {
+        title: "List Your Inventory",
+        desc: "Have goods you no longer use, or professional skills to offer? Post them to your public inventory in seconds with photos or video clips.",
+        icon: "📦",
+        bg: "from-[#3b82f6]/10 to-[#6366f1]/10"
+      },
+      {
+        title: "State Your Wants",
+        desc: "Create a reverse wishlist for what you are looking for. Our matchmaking engine scans categories and titles to find perfect match circles.",
+        icon: "🔍",
+        bg: "from-[#0ea5e9]/10 to-[#10b981]/10"
+      },
+      {
+        title: "Close the Loop Securely",
+        desc: "Propose trade offers, negotiate terms, add cash toppers, and chat securely with other verified members to finalize the swap.",
+        icon: "🤝",
+        bg: "from-[#f59e0b]/10 to-[#8b5cf6]/10"
+      }
+    ];
+
+    const currentSlide = introSlides[introStep - 1];
+
+    return (
+      <div className={cn("bg-white min-h-screen py-10 px-6 flex flex-col justify-between transition-colors duration-500 bg-gradient-to-br", currentSlide.bg)}>
+        {/* Skip button at top */}
+        <div className="flex justify-end max-w-sm mx-auto w-full">
+          {introStep < 3 && (
+            <button 
+              onClick={() => setShowIntro(false)} 
+              className="text-[10px] font-black uppercase tracking-widest text-text-charcoal/40 hover:text-text-charcoal px-3 py-1.5 rounded-full border border-border-sleek/50 bg-white shadow-sm cursor-pointer min-h-[44px] min-w-[44px]"
+              aria-label="Skip walkthrough"
+            >
+              Skip
+            </button>
+          )}
+        </div>
+
+        {/* Walkthrough Slider */}
+        <div className="w-full max-w-sm mx-auto my-auto text-center space-y-8 py-8 select-none">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={introStep}
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -30 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <div className="w-24 h-24 rounded-[36px] bg-white border border-border-sleek/60 shadow-xl shadow-indigo-500/5 flex items-center justify-center text-4xl mx-auto">
+                {currentSlide.icon}
+              </div>
+              <div className="space-y-3">
+                <h2 className="text-2xl font-display font-black text-text-charcoal tracking-tight">{currentSlide.title}</h2>
+                <p className="text-xs text-text-charcoal/60 leading-relaxed font-semibold pr-2 pl-2">
+                  {currentSlide.desc}
+                </p>
+              </div>
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Dots Indicator */}
+          <div className="flex justify-center gap-2 pt-2">
+            {[1, 2, 3].map((s) => (
+              <div 
+                key={s} 
+                className={cn(
+                  "h-1.5 rounded-full transition-all duration-300", 
+                  introStep === s ? "w-6 bg-brand-primary" : "w-1.5 bg-text-charcoal/15"
+                )}
+              ></div>
+            ))}
+          </div>
+        </div>
+
+        {/* Action Button Row */}
+        <div className="w-full max-w-sm mx-auto flex gap-3">
+          {introStep > 1 && (
+            <button
+              onClick={() => setIntroStep(prev => Math.max(1, prev - 1))}
+              className="flex-1 py-4 bg-surface-beige text-text-charcoal font-black uppercase text-xs tracking-wider rounded-2xl border border-border-sleek transition-all cursor-pointer min-h-[44px]"
+              aria-label="Previous step"
+            >
+              Back
+            </button>
+          )}
+          
+          <button
+            onClick={() => {
+              if (introStep === 3) {
+                setShowIntro(false);
+              } else {
+                setIntroStep(prev => prev + 1);
+              }
+            }}
+            className="flex-1 py-4 bg-brand-primary text-white font-black uppercase text-xs tracking-wider rounded-2xl shadow-lg shadow-brand-primary/10 hover:scale-[1.01] transition-all cursor-pointer min-h-[44px]"
+            aria-label={introStep === 3 ? "Get Started" : "Next step"}
+          >
+            {introStep === 3 ? "Let's Get Started!" : "Next"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white min-h-screen py-10 px-6 flex flex-col justify-between">

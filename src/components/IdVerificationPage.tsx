@@ -354,16 +354,16 @@ export const IdVerificationPage = () => {
       )}
 
       {verificationState === 'success' && (
-        <div className="fixed inset-0 bg-[#059669] z-50 flex flex-col items-center justify-center p-6 text-white text-center">
-          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-[#059669] shadow-2xl mb-6 scale-up animate-bounce">
+        <div className="fixed inset-0 bg-[#0ea5e9] z-50 flex flex-col items-center justify-center p-6 text-white text-center">
+          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-[#0ea5e9] shadow-2xl mb-6 scale-up animate-bounce">
             <Check size={36} className="stroke-[3.5px]" />
           </div>
-          <h2 className="text-3xl font-display font-black tracking-tight mb-1.5">Verification Successful!</h2>
-          <p className="text-[10px] font-black tracking-widest uppercase text-emerald-100 mb-8">
-            YOUR ID WAS SECURELY LOCKED AND CERTIFIED
+          <h2 className="text-3xl font-display font-black tracking-tight mb-1.5">Request Submitted!</h2>
+          <p className="text-[10px] font-black tracking-widest uppercase text-sky-100 mb-8">
+            YOUR ID SECURELY UPLOADED FOR REVIEW
           </p>
-          <p className="text-xs font-semibold max-w-[250px] leading-relaxed mb-10 text-emerald-50">
-            A real-time "Govt ID Verified" credential badge has been securely added to your profile. You can now perform premium unlimited system barters!
+          <p className="text-xs font-semibold max-w-[250px] leading-relaxed mb-10 text-sky-50">
+            Your Aadhaar identity documents have been submitted to the verification queue. The administrator will review and verify your profile shortly.
           </p>
           <button
             type="button"
@@ -371,7 +371,7 @@ export const IdVerificationPage = () => {
               setVerificationState('idle');
               navigate('/profile');
             }}
-            className="px-8 py-4.5 bg-white text-[#059669] font-black uppercase text-xs tracking-wider rounded-[22px] shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            className="px-8 py-4.5 bg-white text-[#0ea5e9] font-black uppercase text-xs tracking-wider rounded-[22px] shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer min-h-[44px]"
           >
             Return to Profile
           </button>
