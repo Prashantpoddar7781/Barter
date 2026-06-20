@@ -194,12 +194,21 @@ function getFallbackBarterIntelligence(title: string, category: string, value: n
 app.post("/api/auth/send-passcode", async (req, res) => {
   let code = "123456";
   try {
-    const { emailOrPhone } = req.body;
+    const { emailOrPhone, purpose } = req.body;
     if (!emailOrPhone) {
       return res.status(400).json({ error: "Email or phone number is required" });
     }
 
     const cleanInput = String(emailOrPhone).trim().toLowerCase();
+
+    if (purpose === "signup") {
+      const userExists = await prisma.user.findUnique({
+        where: { emailOrPhone: cleanInput }
+      });
+      if (userExists) {
+        return res.status(400).json({ error: "An account with this email/phone number already exists. Please Sign In." });
+      }
+    }
     
     // Generate a random 6-digit code, or fallback to 123456 for sandbox testing if no email service is configured
     const resendApiKey = process.env.RESEND_API_KEY;
@@ -232,6 +241,8 @@ app.post("/api/auth/send-passcode", async (req, res) => {
         </p>
       </div>
     `;
+
+    let sandboxActive = false;
 
     if (resendApiKey && cleanInput.includes("@")) {
       console.log(`[PASSCODE] Attempting to send Resend email API to ${cleanInput}`);
@@ -271,6 +282,16 @@ app.post("/api/auth/send-passcode", async (req, res) => {
       };
       await transporter.sendMail(mailOptions);
       console.log(`[PASSCODE] Successfully sent email OTP to ${cleanInput} via SMTP`);
+    } else {
+      sandboxActive = true;
+    }
+
+    if (sandboxActive) {
+      return res.json({ 
+        success: true, 
+        message: "Sandbox mode active. Passcode generated.", 
+        sandboxCode: code 
+      });
     }
 
     res.json({ success: true, message: "Verification passcode sent successfully." });
@@ -288,7 +309,7 @@ app.post("/api/auth/send-passcode", async (req, res) => {
 // POST /api/auth/verify-passcode - Verify passcode and authenticate user
 app.post("/api/auth/verify-passcode", async (req, res) => {
   try {
-    const { emailOrPhone, code } = req.body;
+    const { emailOrPhone, code, password } = req.body;
     if (!emailOrPhone || !code) {
       return res.status(400).json({ error: "Email/phone and passcode code are required" });
     }
@@ -326,9 +347,11 @@ app.post("/api/auth/verify-passcode", async (req, res) => {
     let isNewUser = false;
     if (!user) {
       isNewUser = true;
+      const hashedPassword = password ? await bcrypt.hash(password, 10) : null;
       user = await prisma.user.create({
         data: {
           emailOrPhone: cleanInput,
+          password: hashedPassword,
           avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanInput)}`,
           isOnboardingCompleted: false
         }

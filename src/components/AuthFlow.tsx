@@ -46,7 +46,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
 
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [authMode, setAuthMode] = useState<'password' | 'otp' | 'forgot'>('password');
+  const [authMode, setAuthMode] = useState<'password' | 'otp' | 'forgot' | 'signup'>('password');
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,6 +90,17 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
       setErrorMessage(loginMethod === 'email' ? 'Please enter a valid email address' : 'Please enter your phone number');
       return;
     }
+
+    if (authMode === 'signup') {
+      if (!password.trim()) {
+        setErrorMessage('Please choose a password');
+        return;
+      }
+      if (password.trim().length < 6) {
+        setErrorMessage('Password must be at least 6 characters');
+        return;
+      }
+    }
     
     setIsLoading(true);
     setErrorMessage('');
@@ -99,7 +110,10 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
       const res = await fetch(getApiUrl('/api/auth/send-passcode'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrPhone: inputValue })
+        body: JSON.stringify({ 
+          emailOrPhone: inputValue,
+          purpose: authMode === 'signup' ? 'signup' : undefined
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send passcode');
@@ -134,7 +148,11 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
       const res = await fetch(getApiUrl('/api/auth/verify-passcode'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrPhone: inputValue, code: typedOtp })
+        body: JSON.stringify({ 
+          emailOrPhone: inputValue, 
+          code: typedOtp,
+          password: authMode === 'signup' ? password.trim() : undefined
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Passcode verification failed');
@@ -304,9 +322,47 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
               ? 'Sign in using your account credentials.' 
               : authMode === 'otp' 
                 ? 'Sign in via one-time secure passcode.' 
-                : 'Reset your password using email OTP.'}
+                : authMode === 'signup'
+                  ? 'Create a new account and verify via OTP.'
+                  : 'Reset your password using email OTP.'}
           </p>
         </div>
+
+        {/* Header Tabs for Sign In vs Sign Up */}
+        {authMode !== 'forgot' && !otpSent && (
+          <div className="flex bg-surface-beige p-1 rounded-2xl border border-border-sleek">
+            <button
+              type="button"
+              onClick={() => { 
+                setAuthMode('password'); 
+                setInputValue(''); 
+                setPassword(''); 
+                setErrorMessage(''); 
+              }}
+              className={cn(
+                "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                (authMode === 'password' || authMode === 'otp') ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+              )}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => { 
+                setAuthMode('signup'); 
+                setInputValue(''); 
+                setPassword(''); 
+                setErrorMessage(''); 
+              }}
+              className={cn(
+                "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                authMode === 'signup' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+              )}
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
 
         {/* Outer Form Box Segment */}
         {authMode === 'password' ? (
@@ -397,7 +453,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
                   onClick={() => { setAuthMode('otp'); setInputValue(''); setPassword(''); setErrorMessage(''); }}
                   className="text-[9.5px] font-black uppercase tracking-wider text-brand-primary hover:underline"
                 >
-                  Verify Code / Sign Up
+                  Sign In via OTP
                 </button>
                 <button
                   type="button"
@@ -407,6 +463,89 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
                   Forgot Password?
                 </button>
               </div>
+            </div>
+          </form>
+        ) : authMode === 'signup' && !otpSent ? (
+          <form onSubmit={handleSendOtp} className="space-y-5">
+            {/* Sign Up Mode Selector tabs */}
+            <div className="flex bg-surface-beige p-1 rounded-2xl border border-border-sleek">
+              <button
+                type="button"
+                onClick={() => { setLoginMethod('email'); setInputValue(''); setErrorMessage(''); }}
+                className={cn(
+                  "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                  loginMethod === 'email' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+                )}
+              >
+                Email Mode
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLoginMethod('phone'); setInputValue(''); setErrorMessage(''); }}
+                className={cn(
+                  "flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer",
+                  loginMethod === 'phone' ? "bg-white text-brand-primary shadow-sm" : "text-text-charcoal/40 hover:text-text-charcoal"
+                )}
+              >
+                Mobile Mode
+              </button>
+            </div>
+
+            {/* Email / Mobile Input */}
+            <div className="space-y-1.5">
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">
+                {loginMethod === 'email' ? 'Email Address' : 'Mobile Contact'}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center text-text-charcoal/30">
+                  {loginMethod === 'email' ? <Mail size={18} /> : <Phone size={18} />}
+                </div>
+                <input
+                  type={loginMethod === 'email' ? 'email' : 'tel'}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={loginMethod === 'email' ? 'ravi@barterhub.in' : '+91 98765 43210'}
+                  className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Choose Password Input */}
+            <div className="space-y-1.5">
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-text-charcoal/40">Choose Password</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center text-text-charcoal/30">
+                  <Lock size={18} />
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Min 6 characters"
+                  className="w-full bg-surface-beige border border-border-sleek rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-text-charcoal focus:outline-none focus:ring-2 focus:ring-brand-primary/20 placeholder:text-text-charcoal/20 transition-all"
+                />
+              </div>
+            </div>
+
+            {errorMessage && (
+              <p className="text-red-500 font-bold text-xs bg-red-50/50 p-3 rounded-xl border border-red-100 flex items-center gap-1.5 animate-pulse">
+                ⚠️ {errorMessage}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div className="space-y-3 pt-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-brand-primary text-white font-black uppercase tracking-wider text-xs py-4.5 rounded-[22px] shadow-lg shadow-brand-primary/10 flex items-center justify-center gap-2 hover:bg-brand-primary/95 transition-all cursor-pointer active:scale-98 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                  <>Send OTP Verification <ArrowRight size={15} /></>
+                )}
+              </button>
             </div>
           </form>
         ) : !otpSent ? (
@@ -598,7 +737,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
                 <span>💡</span>
                 <div>
                   <p className="font-bold uppercase tracking-wider text-[9px] text-[#0369a1] mb-0.5">Sandbox Mode Fallback</p>
-                  <p className="normal-case text-sky-800">Due to Resend/SMTP sandbox limits, the real email could not be delivered. Please enter passcode <strong>{sandboxCode}</strong> to verify and unlock.</p>
+                  <p className="normal-case text-sky-800">Due to Resend/SMTP sandbox limits, the real email could not be delivered. Please enter passcode <strong>{sandboxCode}</strong> to verify and complete authentication.</p>
                 </div>
               </div>
             )}
@@ -619,7 +758,7 @@ export const LoginPage = ({ redirect = '/', onSuccess }: LoginPageProps) => {
                 {isLoading ? (
                   <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
                 ) : (
-                  <>Verify Code & Unlock</>
+                  <>{authMode === 'signup' ? 'Verify Code & Register' : 'Verify Code & Unlock'}</>
                 )}
               </button>
 
