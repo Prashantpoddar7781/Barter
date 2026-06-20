@@ -5729,12 +5729,31 @@ const AdminPanel = () => {
                       <div className="space-y-2">
                         <p className="text-[8px] font-black uppercase tracking-widest text-text-charcoal/40">Audit Trade Logs</p>
                         <div className="bg-slate-900 text-slate-300 p-4.5 rounded-2xl border border-slate-800 font-mono text-[9px] leading-relaxed space-y-2 max-h-36 overflow-y-auto animate-fade-in">
-                          <p className="text-slate-500">[19:42:01] Chat Session Initiated</p>
-                          <p className="text-slate-500">[19:43:10] Offer proposed: DSLR Camera for Fujifilm</p>
-                          <p className="text-[#38bdf8]"><span className="text-emerald-400">Reporter:</span> "Hey! Is this camera in fully working condition?"</p>
-                          <p className="text-[#38bdf8]"><span className="text-brand-accent">Lister:</span> "Yes working great, lens is clean"</p>
-                          <p className="text-slate-500">[19:44:59] Deal confirmed & trade locked in ledger</p>
-                          <p className="text-red-400"><span className="text-emerald-400">Reporter:</span> [Opened Dispute] "Lister did not show up at physical Surat exchange point."</p>
+                          {rep.targetType === 'listing' && rep.listing ? (
+                            <>
+                              <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Chat Session Initiated</p>
+                              <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Offer proposed: "{rep.listing.title}" for reverse trade</p>
+                              <p className="text-[#38bdf8]"><span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> "Hey! Is the listing in fully working condition as described?"</p>
+                              <p className="text-[#38bdf8]"><span className="text-brand-accent">{rep.listing.user?.name || 'Lister'}:</span> "Yes, matches the estimated value of ₹{rep.listing.estimatedValue.toLocaleString()}."</p>
+                              <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Transaction locked in ledger</p>
+                              <p className="text-red-400">
+                                <span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> [Opened Dispute] "Reported reason: {rep.reason.toUpperCase()}. Details: {rep.details || 'No additional details provided.'}"
+                              </p>
+                            </>
+                          ) : (() => {
+                            const targetUser = getActiveUserById(rep.targetId);
+                            return (
+                              <>
+                                <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Connection established</p>
+                                <p className="text-[#38bdf8]"><span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> "Hey! I would like to report behavior or safety issue regarding target user."</p>
+                                <p className="text-[#38bdf8]"><span className="text-brand-accent">{targetUser?.name || 'Reported User'}:</span> [Target user flag state audit initiated]</p>
+                                <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Incident logged in safety registry</p>
+                                <p className="text-red-400">
+                                  <span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> [Opened Dispute] "Reported reason: {rep.reason.toUpperCase()}. Details: {rep.details || 'No additional details provided.'}"
+                                </p>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
 
