@@ -5727,34 +5727,131 @@ const AdminPanel = () => {
                       </div>
 
                       <div className="space-y-2">
-                        <p className="text-[8px] font-black uppercase tracking-widest text-text-charcoal/40">Audit Trade Logs</p>
-                        <div className="bg-slate-900 text-slate-300 p-4.5 rounded-2xl border border-slate-800 font-mono text-[9px] leading-relaxed space-y-2 max-h-36 overflow-y-auto animate-fade-in">
-                          {rep.targetType === 'listing' && rep.listing ? (
-                            <>
-                              <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Chat Session Initiated</p>
-                              <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Offer proposed: "{rep.listing.title}" for reverse trade</p>
-                              <p className="text-[#38bdf8]"><span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> "Hey! Is the listing in fully working condition as described?"</p>
-                              <p className="text-[#38bdf8]"><span className="text-brand-accent">{rep.listing.user?.name || 'Lister'}:</span> "Yes, matches the estimated value of ₹{rep.listing.estimatedValue.toLocaleString()}."</p>
-                              <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Transaction locked in ledger</p>
-                              <p className="text-red-400">
-                                <span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> [Opened Dispute] "Reported reason: {rep.reason.toUpperCase()}. Details: {rep.details || 'No additional details provided.'}"
-                              </p>
-                            </>
-                          ) : (() => {
-                            const targetUser = getActiveUserById(rep.targetId);
-                            return (
-                              <>
-                                <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Connection established</p>
-                                <p className="text-[#38bdf8]"><span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> "Hey! I would like to report behavior or safety issue regarding target user."</p>
-                                <p className="text-[#38bdf8]"><span className="text-brand-accent">{targetUser?.name || 'Reported User'}:</span> [Target user flag state audit initiated]</p>
-                                <p className="text-slate-500">[{new Date(rep.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}] Incident logged in safety registry</p>
-                                <p className="text-red-400">
-                                  <span className="text-emerald-400">{reporter?.name || 'Reporter'}:</span> [Opened Dispute] "Reported reason: {rep.reason.toUpperCase()}. Details: {rep.details || 'No additional details provided.'}"
+                        <p className="text-[8px] font-black uppercase tracking-widest text-text-charcoal/40">
+                          {rep.targetType === 'listing' ? 'Disputed Listing Details' : 'Disputed User Details'}
+                        </p>
+                        
+                        {rep.targetType === 'listing' && rep.listing ? (
+                          <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4.5 space-y-4 text-left">
+                            {/* Visual Header Grid: Photo & Title/Value details side by side */}
+                            <div className="flex flex-col sm:flex-row gap-4">
+                              {/* Listing Image */}
+                              <div className="w-full sm:w-28 sm:h-28 h-40 rounded-xl bg-zinc-950 overflow-hidden border border-border-sleek shrink-0 flex items-center justify-center relative shadow-sm">
+                                {(() => {
+                                  const imagesArray = (() => {
+                                    if (!rep.listing?.images) return [];
+                                    if (Array.isArray(rep.listing.images)) return rep.listing.images;
+                                    try {
+                                      const parsed = typeof rep.listing.images === 'string' ? JSON.parse(rep.listing.images) : rep.listing.images;
+                                      return Array.isArray(parsed) ? parsed : [];
+                                    } catch {
+                                      return [];
+                                    }
+                                  })();
+                                  
+                                  const firstImg = imagesArray[0];
+                                  if (firstImg) {
+                                    return (
+                                      <img 
+                                        src={firstImg} 
+                                        className="w-full h-full object-cover hover:scale-105 transition-transform duration-300 animate-fade-in" 
+                                        alt="Disputed item" 
+                                      />
+                                    );
+                                  }
+                                  return (
+                                    <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">No Image</span>
+                                  );
+                                })()}
+                              </div>
+                              
+                              {/* Listing Context Info */}
+                              <div className="flex-1 space-y-2">
+                                <div>
+                                  <div className="flex justify-between items-start gap-2">
+                                    <h4 className="text-xs font-black text-text-charcoal leading-tight">{rep.listing.title}</h4>
+                                    <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/70 border border-emerald-200/50 px-2 py-0.5 rounded-full shrink-0">
+                                      ₹{rep.listing.estimatedValue.toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    <span className="px-2 py-0.5 text-[8px] font-extrabold uppercase rounded bg-slate-200 text-slate-700 tracking-wider">
+                                      {rep.listing.category}
+                                    </span>
+                                    {rep.listing.condition && (
+                                      <span className="px-2 py-0.5 text-[8px] font-extrabold uppercase rounded bg-indigo-100 text-indigo-700 tracking-wider">
+                                        Condition: {rep.listing.condition}
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 text-[8px] font-extrabold uppercase rounded bg-amber-100 text-amber-800 tracking-wider">
+                                      📍 {rep.listing.location || 'Surat'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="text-[9px] text-text-charcoal/60 leading-none pt-1">
+                                  Owner: <span className="font-extrabold text-brand-primary">{rep.listing.user?.name || rep.listing.user?.emailOrPhone || 'Lister'}</span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Full Item Description Box */}
+                            {rep.listing.description && (
+                              <div className="pt-2.5 border-t border-slate-200/60">
+                                <h5 className="text-[9px] font-black uppercase tracking-wider text-text-charcoal/40 mb-1">Item Description</h5>
+                                <p className="text-[10px] text-text-charcoal/70 leading-relaxed font-medium bg-white p-3 rounded-xl border border-slate-100 whitespace-pre-line">
+                                  {rep.listing.description}
                                 </p>
-                              </>
-                            );
-                          })()}
-                        </div>
+                              </div>
+                            )}
+
+                            {/* Wants / Looking For Box */}
+                            {(() => {
+                              const wantsArray = (() => {
+                                if (!rep.listing?.wants) return [];
+                                if (Array.isArray(rep.listing.wants)) return rep.listing.wants;
+                                try {
+                                  const parsed = typeof rep.listing.wants === 'string' ? JSON.parse(rep.listing.wants) : rep.listing.wants;
+                                  return Array.isArray(parsed) ? parsed : [];
+                                } catch {
+                                  return [];
+                                }
+                              })();
+                              
+                              if (wantsArray.length === 0) return null;
+                              
+                              return (
+                                <div className="pt-2.5 border-t border-slate-200/60">
+                                  <h5 className="text-[9px] font-black uppercase tracking-wider text-text-charcoal/40 mb-1">Looking for / wants in exchange</h5>
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {wantsArray.map((w: string, idx: number) => (
+                                      <span key={idx} className="bg-indigo-50 border border-indigo-100 text-indigo-700 text-[8px] font-bold px-2 py-0.5 rounded-lg uppercase tracking-wider">
+                                        {w}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        ) : (() => {
+                          const targetUser = getActiveUserById(rep.targetId);
+                          if (!targetUser) return <p className="text-[10px] text-text-charcoal/40 font-bold uppercase italic text-left">Reported target user not found</p>;
+                          return (
+                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 flex items-center gap-3 text-left">
+                              <img src={targetUser.avatar} className="w-11 h-11 rounded-xl object-cover border border-border-sleek shrink-0" alt="Reported user" />
+                              <div className="flex-1">
+                                <h4 className="text-xs font-black text-text-charcoal leading-tight">{targetUser.name}</h4>
+                                <p className="text-[9.5px] text-text-charcoal/40 font-semibold leading-none mt-0.5">{targetUser.emailOrPhone}</p>
+                                <div className="flex gap-3 text-[8.5px] font-bold text-text-charcoal/50 mt-1">
+                                  <span>Rating: ⭐{targetUser.rating}</span>
+                                  <span>Trades: {targetUser.tradesCount}</span>
+                                  <span>{targetUser.location}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {!isResolved ? (
