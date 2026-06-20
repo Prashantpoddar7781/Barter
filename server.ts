@@ -1176,13 +1176,6 @@ app.post("/api/reports", authenticateToken, async (req: AuthRequest, res) => {
       }
     });
 
-    if (targetType === "listing") {
-      await prisma.listing.update({
-        where: { id: targetId },
-        data: { isFlagged: true }
-      }).catch(() => {});
-    }
-
     res.status(201).json(report);
   } catch (error: any) {
     console.error("Create report error:", error);
@@ -1367,12 +1360,17 @@ app.post("/api/admin/users/:id/ban", authenticateToken, async (req: AuthRequest,
 app.post("/api/admin/users/:id/verify", authenticateToken, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { action } = req.body; // "approve" or "reject"
-    if (!action || (action !== "approve" && action !== "reject")) {
+    const { action, approve } = req.body; // "approve"/"reject" or boolean approve
+    
+    let isApprove = false;
+    if (action === "approve" || approve === true) {
+      isApprove = true;
+    } else if (action === "reject" || approve === false) {
+      isApprove = false;
+    } else {
       return res.status(400).json({ error: "Action must be approve or reject" });
     }
 
-    const isApprove = action === "approve";
     const status = isApprove ? "verified" : "unverified";
 
     const updatedUser = await prisma.user.update({
@@ -1473,9 +1471,12 @@ app.get("/api/admin/reports", authenticateToken, async (req: AuthRequest, res) =
 app.post("/api/admin/reports/:id/resolve", authenticateToken, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { resolvedInFavorOf } = req.body; // "reporter" or "target"
-    if (!resolvedInFavorOf || (resolvedInFavorOf !== "reporter" && resolvedInFavorOf !== "target")) {
-      return res.status(400).json({ error: "resolvedInFavorOf must be reporter or target" });
+    let { resolvedInFavorOf } = req.body; // "reporter", "target", "lister" or "neither"
+    if (resolvedInFavorOf === "lister") {
+      resolvedInFavorOf = "target";
+    }
+    if (!resolvedInFavorOf || (resolvedInFavorOf !== "reporter" && resolvedInFavorOf !== "target" && resolvedInFavorOf !== "neither")) {
+      return res.status(400).json({ error: "resolvedInFavorOf must be reporter, lister, target or neither" });
     }
 
     const report = await prisma.report.findUnique({
@@ -1535,9 +1536,12 @@ app.post("/api/admin/reports/:id/resolve", authenticateToken, async (req: AuthRe
           }
         }).catch(() => {});
         
-        // If reporter won, delete the listing automatically!
+        // If reporter won, moderate the listing automatically instead of deleting!
         if (resolvedInFavorOf === "reporter") {
-          await prisma.listing.delete({ where: { id: report.targetId } }).catch(() => {});
+          await prisma.listing.update({
+            where: { id: report.targetId },
+            data: { isModerated: true, isFlagged: true }
+          }).catch(() => {});
         }
       }
     }

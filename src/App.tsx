@@ -3990,18 +3990,7 @@ const ProfilePage = () => {
               <h3 className="text-[10px] font-black uppercase tracking-[0.15em] text-text-charcoal/40">Developer & Platform Admin</h3>
             </div>
             
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => {
-                  analytics.track('admin_panel_navigated');
-                  navigate('/admin');
-                }}
-                className="py-3 px-2 bg-brand-accent/30 hover:bg-brand-accent/50 text-brand-primary text-[10px] font-black uppercase rounded-xl tracking-wider transition-all min-h-[44px] flex items-center justify-center gap-1.5 cursor-pointer border border-brand-primary/10"
-                aria-label="Navigate to admin dashboard"
-              >
-                <Shield size={14} /> Admin Dashboard
-              </button>
-
+            <div className="grid grid-cols-1">
               <button
                 onClick={() => {
                   analytics.track('test_crash_triggered');
