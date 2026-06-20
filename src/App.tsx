@@ -5313,11 +5313,14 @@ const AdminPanel = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}` 
         },
-        body: JSON.stringify({ approve })
+        body: JSON.stringify({ action: approve ? "approve" : "reject", approve })
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast(approve ? "e-KYC verified! 🎖️" : "e-KYC request rejected. ❌");
         fetchData();
+      } else {
+        showToast(data.error || "Verification action failed.");
       }
     } catch (err) {
       showToast("Verification action failed.");
@@ -5350,11 +5353,16 @@ const AdminPanel = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ resolvedInFavorOf })
+        body: JSON.stringify({ 
+          resolvedInFavorOf: resolvedInFavorOf === 'lister' ? 'target' : resolvedInFavorOf 
+        })
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast(`Dispute resolved. Favor: ${resolvedInFavorOf} ⚖️`);
         fetchData();
+      } else {
+        showToast(data.error || "Dispute resolution failed.");
       }
     } catch (err) {
       showToast("Dispute resolution failed.");
