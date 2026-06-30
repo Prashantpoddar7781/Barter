@@ -40,7 +40,10 @@ const transporter = smtpHost && smtpUser && smtpPass ? nodemailer.createTranspor
 if (transporter) {
   transporter.verify((error, success) => {
     if (error) {
-      console.error("[SMTP] Connection verification failed:", error);
+      console.error("[SMTP] Connection verification failed:", error.message);
+      if (smtpHost.includes("gmail.com")) {
+        console.warn("[SMTP] TIP: For Gmail, ensure you are using a 16-character 'App Password' (not your primary password) and that 2-Step Verification is enabled on info.gobarter@gmail.com.");
+      }
     } else {
       console.log("[SMTP] Connection verified successfully! Transporter is ready.");
     }
