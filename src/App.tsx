@@ -80,7 +80,6 @@ export const defaultLocalUser: User = {
   tradesCount: 47,
   isVerified: true,
   isTopTrader: true,
-  responseRate: '100%',
   cashUsed: 0,
   phoneVerified: true,
   idVerified: true,
@@ -145,7 +144,6 @@ export const getActiveUserById = (userId: string): User => {
     tradesCount: 1,
     isVerified: true,
     isTopTrader: false,
-    responseRate: '100%',
     cashUsed: 0,
     phoneVerified: true,
     idVerified: true,
@@ -237,7 +235,6 @@ export const cleanUserObj = (u: any): User => ({
   tradesCount: typeof u.tradesCount === 'number' ? u.tradesCount : 1,
   isVerified: !!u.isVerified,
   isTopTrader: !!u.isTopTrader,
-  responseRate: u.responseRate || '100%',
   cashUsed: typeof u.cashUsed === 'number' ? u.cashUsed : 0,
   phoneVerified: !!u.phoneVerified,
   idVerified: !!u.idVerified,
@@ -1262,15 +1259,15 @@ const DiscoverPage = () => {
                             name: circle.nodeB.userName,
                             avatar: circle.nodeB.avatar,
                             location: 'Surat, Gujarat',
-                            rating: 4.8,
+                            rating: circle.nodeB.rating || 4.8,
                             tradesCount: 21,
                             isVerified: true,
                             isTopTrader: false,
-                            responseRate: '100%',
                             cashUsed: 0,
                             phoneVerified: true,
                             idVerified: true
                           },
+                          circle: circle,
                           initialMessage: `Hi ${circle.nodeB.userName.split(' ')[0]}! I detected a 3-way circular swap loop on BarterHub involving my item, your "${circle.nodeB.title}", and ${circle.nodeC.userName}'s "${circle.nodeC.title}". Let's coordinate this circular swap! 🔄` 
                         } 
                       });
@@ -3511,11 +3508,6 @@ const ProfilePage = () => {
       <div className="p-6 flex flex-col items-center">
         {/* Profile Card Main */}
         <div className="w-full bg-surface-beige/30 border border-border-sleek rounded-[36px] p-6 flex flex-col items-center shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-3">
-            <span className="bg-brand-primary text-brand-accent px-2 py-1 text-[8.5px] font-black uppercase tracking-wider rounded-xl">
-              {user.idVerified ? 'TRUST SCORE 100%' : 'TRUST SCORE 40%'}
-            </span>
-          </div>
 
           <div className="w-24 h-24 rounded-[36px] bg-brand-accent flex items-center justify-center mb-4 border-4 border-white shadow-md overflow-hidden relative group">
             {user.avatar ? (
@@ -3582,19 +3574,63 @@ const ProfilePage = () => {
           </p>
 
           {isPublicProfile && (
-            <button
-              onClick={() => {
-                analytics.track('propose_trade_clicked', { targetUserId: user.id });
-                navigate(`/chat?userId=${user.id}`);
-              }}
-              className="mb-4 px-5 py-2.5 bg-brand-primary text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md hover:bg-brand-primary/95 transition-all min-h-[44px] cursor-pointer flex items-center justify-center"
-              aria-label="Propose trade offer to user"
-            >
-              Propose Trade Offer 🤝
-            </button>
+            <div className="flex flex-col items-center gap-2 mb-4 w-full">
+              <button
+                onClick={() => {
+                  analytics.track('propose_trade_clicked', { targetUserId: user.id });
+                  navigate(`/chat?userId=${user.id}`);
+                }}
+                className="w-full max-w-[200px] px-5 py-2.5 bg-brand-primary text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md hover:bg-brand-primary/95 transition-all min-h-[44px] cursor-pointer flex items-center justify-center"
+                aria-label="Propose trade offer to user"
+              >
+                Propose Trade Offer 🤝
+              </button>
+              
+              <div className="flex flex-col items-center gap-1 p-2 bg-white border border-border-sleek rounded-2xl w-full max-w-[200px] shadow-sm">
+                <span className="text-[8px] font-black text-text-charcoal/40 uppercase tracking-wider">Rate this member</span>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5].map((starVal) => (
+                    <button
+                      key={starVal}
+                      onClick={async () => {
+                        const token = localStorage.getItem('barter_user_token');
+                        if (!token) {
+                          showToast("Please log in to submit a rating! 🔑");
+                          return;
+                        }
+                        try {
+                          const res = await fetch(getApiUrl(`/api/users/${user.id}/rate`), {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ rating: starVal })
+                          });
+                          if (res.ok) {
+                            const data = await res.json();
+                            showToast(`Rated ${starVal} stars successfully! ⭐`);
+                            setProfileUser(prev => prev ? { ...prev, rating: data.rating } : null);
+                          } else {
+                            const data = await res.json();
+                            showToast(data.error || "Failed to submit rating.");
+                          }
+                        } catch (err) {
+                          showToast("Failed to submit rating.");
+                        }
+                      }}
+                      className="text-base hover:scale-125 transition-transform text-amber-400 hover:text-amber-500 cursor-pointer"
+                      aria-label={`Rate ${starVal} stars`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
 
-          <div className="grid grid-cols-4 w-full border-t border-border-sleek pt-5 text-center">
+          <div className="grid grid-cols-3 w-full border-t border-border-sleek pt-5 text-center">
             <div>
               <p className="text-lg font-display font-extrabold text-text-charcoal">{myListings.length}</p>
               <p className="text-[8px] font-black text-text-charcoal/40 uppercase tracking-widest mt-1">My Ads</p>
@@ -3602,10 +3638,6 @@ const ProfilePage = () => {
             <div className="border-l border-border-sleek text-brand-secondary">
               <p className="text-lg font-display font-extrabold">{user.rating}★</p>
               <p className="text-[8px] font-black opacity-60 uppercase tracking-widest mt-1">Rating</p>
-            </div>
-            <div className="border-l border-border-sleek">
-              <p className="text-lg font-display font-extrabold text-brand-primary">{user.responseRate || '100%'}</p>
-              <p className="text-[8px] font-black text-brand-primary/40 uppercase tracking-widest mt-1">Response</p>
             </div>
             <div className="border-l border-border-sleek">
               <p className="text-lg font-display font-extrabold text-red-500">{user.cancellationRate || '0%'}</p>
@@ -3983,32 +4015,6 @@ const ProfilePage = () => {
           </div>
         </div>
 
-        {!isPublicProfile && (
-          <div className="bg-white p-5 rounded-[32px] border border-border-sleek shadow-sm space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-3 bg-brand-primary rounded-full"></span>
-              <h3 className="text-[10px] font-black uppercase tracking-[0.15em] text-text-charcoal/40">Developer & Platform Admin</h3>
-            </div>
-            
-            <div className="grid grid-cols-1">
-              <button
-                onClick={() => {
-                  analytics.track('test_crash_triggered');
-                  try {
-                    throw new Error("Simulated client-side crash test trigger.");
-                  } catch (err: any) {
-                    sentry.captureException(err, { page: 'ProfilePage', trigger: 'test_button' });
-                    showToast("Sentry Exception Captured! 🚨 Check logs.");
-                  }
-                }}
-                className="py-3 px-2 bg-red-50 hover:bg-red-100 text-red-600 text-[10px] font-black uppercase rounded-xl tracking-wider transition-all min-h-[44px] flex items-center justify-center gap-1.5 cursor-pointer border border-red-200/50"
-                aria-label="Trigger crash test"
-              >
-                💥 Trigger Crash Test
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -4017,9 +4023,14 @@ const ProfilePage = () => {
 const ChatPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as { listing?: Listing; wishlist?: any; recipient?: User } | null;
+  const state = location.state as { listing?: Listing; wishlist?: any; recipient?: User; circle?: any } | null;
   const [activeUser] = useAuth();
   const [chats, setChats] = useChats();
+  const [toastMsg, setToastMsg] = useState('');
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3000);
+  };
 
   // Let's get actual default user or fallback
   const fallbackRecipient = mockUsers.find(u => u.name.includes("Priya")) || mockUsers[0];
@@ -4203,7 +4214,102 @@ const ChatPage = () => {
         );
       })}
 
-      {listing && (
+      {state?.circle && (
+        <div className="p-6 bg-indigo-50/60 border border-indigo-200/50 rounded-[32px] shadow-sm relative overflow-hidden text-left space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles size={14} className="text-indigo-600 animate-pulse" />
+              <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">3-Way Loop Workspace</span>
+            </div>
+            <span className="bg-indigo-600 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
+          </div>
+
+          <div className="space-y-2">
+            {/* A -> B */}
+            <div className="flex items-center gap-2.5 bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm text-xs">
+              <div className="font-bold truncate max-w-[80px]">You</div>
+              <div className="text-indigo-500 font-bold shrink-0">➔</div>
+              <div className="truncate flex-1 font-medium">{state.circle.nodeA.title}</div>
+              <div className="text-indigo-500 font-bold shrink-0">➔</div>
+              <div className="font-bold truncate max-w-[80px]">{state.circle.nodeB.userName.split(' ')[0]}</div>
+            </div>
+            {/* B -> C */}
+            <div className="flex items-center gap-2.5 bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm text-xs">
+              <div className="font-bold truncate max-w-[80px]">{state.circle.nodeB.userName.split(' ')[0]}</div>
+              <div className="text-indigo-500 font-bold shrink-0">➔</div>
+              <div className="truncate flex-1 font-medium">{state.circle.nodeB.title}</div>
+              <div className="text-indigo-500 font-bold shrink-0">➔</div>
+              <div className="font-bold truncate max-w-[80px]">{state.circle.nodeC.userName.split(' ')[0]}</div>
+            </div>
+            {/* C -> A */}
+            <div className="flex items-center gap-2.5 bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm text-xs">
+              <div className="font-bold truncate max-w-[80px]">{state.circle.nodeC.userName.split(' ')[0]}</div>
+              <div className="text-indigo-500 font-bold shrink-0">➔</div>
+              <div className="truncate flex-1 font-medium">{state.circle.nodeC.title}</div>
+              <div className="text-indigo-500 font-bold shrink-0">➔</div>
+              <div className="font-bold truncate max-w-[80px]">You</div>
+            </div>
+          </div>
+
+          <button 
+            onClick={async () => {
+              const token = localStorage.getItem('barter_user_token');
+              if (!token) {
+                showToast("Please log in to execute the circular swap! 🔑");
+                return;
+              }
+              try {
+                const res = await fetch(getApiUrl('/api/trades/execute-circle'), {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
+                  body: JSON.stringify({
+                    listingAId: state.circle.nodeA.id,
+                    listingBId: state.circle.nodeB.id,
+                    listingCId: state.circle.nodeC.id,
+                    userAId: state.circle.nodeA.userId,
+                    userBId: state.circle.nodeB.userId,
+                    userCId: state.circle.nodeC.userId,
+                    titleA: state.circle.nodeA.title,
+                    titleB: state.circle.nodeB.title,
+                    titleC: state.circle.nodeC.title,
+                    nameA: state.circle.nodeA.userName,
+                    nameB: state.circle.nodeB.userName,
+                    nameC: state.circle.nodeC.userName
+                  })
+                });
+                if (res.ok) {
+                  showToast("Circular Loop Swap Completed! 3 lives enriched! 🔄");
+                  const systemMsg: SavedMessage = {
+                    id: 'm_sys_' + Date.now(),
+                    senderId: 'system',
+                    receiverId: partnerId,
+                    text: `🎉 MULTILATERAL LOOP SWAP EXECUTED SUCCESSFULLY! The 3-way circular exchange between ${state.circle.nodeA.userName}, ${state.circle.nodeB.userName}, and ${state.circle.nodeC.userName} has been finalized on the database ledger. 🔄`,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    timestamp: Date.now()
+                  };
+                  setChats((prev: SavedMessage[]) => [...prev, systemMsg]);
+                  setTimeout(() => {
+                    navigate('/');
+                  }, 2500);
+                } else {
+                  const data = await res.json();
+                  showToast(data.error || "Failed to execute loop swap.");
+                }
+              } catch (err) {
+                showToast("Error executing circular swap loop.");
+              }
+            }}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/10 transition-all hover:scale-[1.02] active:scale-98 cursor-pointer flex items-center justify-center gap-1.5"
+          >
+            Approve & Execute Loop Swap 🔄
+          </button>
+        </div>
+      )}
+
+      {listing && !state?.circle && (
         <div className="p-6 bg-brand-accent/30 rounded-[32px] border border-brand-primary/10 shadow-sm relative overflow-hidden group text-left">
           <div className="absolute -right-6 -top-6 w-20 h-20 bg-brand-primary/5 rounded-full blur-2xl"></div>
           <div className="flex items-center justify-between mb-4">
@@ -4228,7 +4334,7 @@ const ChatPage = () => {
         </div>
       )}
 
-      {!listing && wishlist && (
+      {!listing && wishlist && !state?.circle && (
         <div className="p-6 bg-brand-accent/30 rounded-[32px] border border-brand-primary/10 shadow-sm relative overflow-hidden group text-left">
           <div className="absolute -right-6 -top-6 w-20 h-20 bg-brand-primary/5 rounded-full blur-2xl"></div>
           <div className="flex items-center justify-between mb-4">
@@ -4251,7 +4357,7 @@ const ChatPage = () => {
         </div>
       )}
 
-      {!listing && !wishlist && (
+      {!listing && !wishlist && !state?.circle && (
         <div className="p-6 bg-brand-accent/30 rounded-[32px] border border-brand-primary/10 shadow-sm relative overflow-hidden group text-left">
           <div className="absolute -right-6 -top-6 w-20 h-20 bg-brand-primary/5 rounded-full blur-2xl"></div>
           <div className="flex items-center justify-between mb-4">
@@ -4349,6 +4455,12 @@ const ChatPage = () => {
       </motion.div>
     )}
   </AnimatePresence>
+  
+  {toastMsg && (
+    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-text-charcoal text-white text-[10.5px] font-black uppercase tracking-wider px-5 py-3 rounded-full shadow-2xl z-50 flex items-center gap-2 select-none">
+      <span>{toastMsg}</span>
+    </div>
+  )}
   </>
   );
 };

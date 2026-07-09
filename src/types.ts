@@ -6,10 +6,11 @@ export interface User {
   avatar: string;
   location: string;
   rating: number;
+  ratingSum?: number;
+  ratingCount?: number;
   tradesCount: number;
   isVerified: boolean;
   isTopTrader: boolean;
-  responseRate: string;
   cashUsed: number;
   phoneVerified: boolean;
   idVerified: boolean;

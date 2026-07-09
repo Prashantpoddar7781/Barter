@@ -519,7 +519,6 @@ app.get("/api/users/:id", async (req, res) => {
         tradesCount: true,
         isVerified: true,
         isTopTrader: true,
-        responseRate: true,
         createdAt: true,
         interests: true
       }
@@ -592,6 +591,49 @@ app.post("/api/auth/verify-id", authenticateToken, async (req: AuthRequest, res)
     res.status(500).json({ error: error.message });
   }
 });
+
+// POST /api/users/:id/rate - Rate a user and calculate average rating
+app.post("/api/users/:id/rate", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { rating } = req.body;
+    const ratingVal = Number(rating);
+    if (isNaN(ratingVal) || ratingVal < 1 || ratingVal > 5) {
+      return res.status(400).json({ error: "Rating must be a number between 1 and 5" });
+    }
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id }
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Initialize rating fields if they are null
+    const currentRatingSum = targetUser.ratingSum ?? 4.8;
+    const currentRatingCount = targetUser.ratingCount ?? 1;
+
+    const newRatingCount = currentRatingCount + 1;
+    const newRatingSum = currentRatingSum + ratingVal;
+    const newRating = Math.round((newRatingSum / newRatingCount) * 10) / 10;
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: {
+        ratingCount: newRatingCount,
+        ratingSum: newRatingSum,
+        rating: newRating
+      }
+    });
+
+    res.json({ rating: updatedUser.rating, ratingCount: updatedUser.ratingCount });
+  } catch (error: any) {
+    console.error("Rate user error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 
 // ================= LISTING ENDPOINTS =================
@@ -1318,6 +1360,124 @@ app.get("/api/trades/circles", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// POST /api/trades/execute-circle - Execute a multilateral 3-way circular loop swap
+app.post("/api/trades/execute-circle", authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { 
+      listingAId, listingBId, listingCId, 
+      userAId, userBId, userCId,
+      titleA, titleB, titleC,
+      nameA, nameB, nameC
+    } = req.body;
+
+    if (!listingAId || !listingBId || !listingCId || !userAId || !userBId || !userCId) {
+      return res.status(400).json({ error: "Missing required circular swap parameters" });
+    }
+
+    // 1. Delete the listings (or ignore if they are mock listings not in DB)
+    try {
+      await prisma.listing.delete({ where: { id: listingAId } });
+    } catch (e) {}
+    try {
+      await prisma.listing.delete({ where: { id: listingBId } });
+    } catch (e) {}
+    try {
+      await prisma.listing.delete({ where: { id: listingCId } });
+    } catch (e) {}
+
+    // 2. Increment tradesCount for all three users
+    try {
+      await prisma.user.update({
+        where: { id: userAId },
+        data: { tradesCount: { increment: 1 } }
+      });
+    } catch (e) {}
+    try {
+      await prisma.user.update({
+        where: { id: userBId },
+        data: { tradesCount: { increment: 1 } }
+      });
+    } catch (e) {}
+    try {
+      await prisma.user.update({
+        where: { id: userCId },
+        data: { tradesCount: { increment: 1 } }
+      });
+    } catch (e) {}
+
+    // 3. Create TradeRecord entries for the history of users
+    try {
+      await prisma.tradeRecord.createMany({
+        data: [
+          {
+            user1Id: userAId,
+            user1Name: nameA || "User A",
+            user2Id: userBId,
+            user2Name: nameB || "User B",
+            item1Title: titleA || "Item A",
+            item2Title: titleB || "Item B"
+          },
+          {
+            user1Id: userBId,
+            user1Name: nameB || "User B",
+            user2Id: userCId,
+            user2Name: nameC || "User C",
+            item1Title: titleB || "Item B",
+            item2Title: titleC || "Item C"
+          },
+          {
+            user1Id: userCId,
+            user1Name: nameC || "User C",
+            user2Id: userAId,
+            user2Name: nameA || "User A",
+            item1Title: titleC || "Item C",
+            item2Title: titleA || "Item A"
+          }
+        ]
+      });
+    } catch (e) {
+      console.error("Failed to create trade records:", e);
+    }
+
+    // 4. Create database notifications for all three users
+    try {
+      await prisma.notification.createMany({
+        data: [
+          {
+            userId: userAId,
+            title: "Multilateral Loop Swap Completed! 🔄",
+            message: `Congratulations! Your circular loop swap has successfully executed. You swapped "${titleA}" to ${nameB} and received "${titleC}" from ${nameC}!`,
+            type: "trade",
+            read: false
+          },
+          {
+            userId: userBId,
+            title: "Multilateral Loop Swap Completed! 🔄",
+            message: `Congratulations! Your circular loop swap has successfully executed. You swapped "${titleB}" to ${nameC} and received "${titleA}" from ${nameA}!`,
+            type: "trade",
+            read: false
+          },
+          {
+            userId: userCId,
+            title: "Multilateral Loop Swap Completed! 🔄",
+            message: `Congratulations! Your circular loop swap has successfully executed. You swapped "${titleC}" to ${nameA} and received "${titleB}" from ${nameB}!`,
+            type: "trade",
+            read: false
+          }
+        ]
+      });
+    } catch (e) {
+      console.error("Failed to create loop notifications:", e);
+    }
+
+    res.json({ success: true, message: "Circular swap executed successfully" });
+  } catch (error: any) {
+    console.error("Execute circular swap error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // ================= ADMIN ENDPOINTS =================
 
