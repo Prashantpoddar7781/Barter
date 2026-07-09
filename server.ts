@@ -698,7 +698,6 @@ app.get("/api/listings", async (req, res) => {
         }
       });
 
-      // Create mock listings
       await prisma.listing.createMany({
         data: [
           {
@@ -712,27 +711,27 @@ app.get("/api/listings", async (req, res) => {
             estimatedValue: 1500,
             location: "Surat, Gujarat",
             distance: "2km away",
-            wants: JSON.stringify(['Yoga sessions', 'Baked goods']),
+            wants: JSON.stringify(['DSLR Camera']),
             openToNegotiate: false,
             negotiableCategories: JSON.stringify([]),
-            tags: JSON.stringify(['Goods', 'Service ok']),
+            tags: JSON.stringify(['Goods']),
             isService: false
           },
           {
             id: "l2",
             userId: arjunUser.id,
-            title: "Logo design (2 concepts)",
-            description: "Professional logo design with 2 distinct concepts and revisions.",
-            images: JSON.stringify(['https://images.unsplash.com/photo-1626785774573-4b799315345d?auto=format&fit=crop&q=80&w=400']),
+            title: "Yoga sessions (fitness training)",
+            description: "Professional yoga training and guided meditation.",
+            images: JSON.stringify(['https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&q=80&w=400']),
             category: "Skills",
-            condition: "New",
-            estimatedValue: 5000,
-            location: "Remote",
-            distance: "Remote",
-            wants: JSON.stringify(['Web hosting credits', 'SEO help']),
+            condition: "Professional",
+            estimatedValue: 3000,
+            location: "Surat, Gujarat",
+            distance: "1km away",
+            wants: JSON.stringify(['Monstera plant']),
             openToNegotiate: true,
-            negotiableCategories: JSON.stringify(['Creative Services', 'Other']),
-            tags: JSON.stringify(['Service', 'Verified Pro']),
+            negotiableCategories: JSON.stringify(['Other']),
+            tags: JSON.stringify(['Service']),
             isService: true
           },
           {
@@ -746,10 +745,10 @@ app.get("/api/listings", async (req, res) => {
             estimatedValue: 35000,
             location: "Surat, Gujarat",
             distance: "5km away",
-            wants: JSON.stringify(['Laptop', 'Video editing service']),
+            wants: JSON.stringify(['Yoga sessions']),
             openToNegotiate: true,
-            negotiableCategories: JSON.stringify(['Electronics', 'Skills']),
-            tags: JSON.stringify(['Goods or Service']),
+            negotiableCategories: JSON.stringify(['Skills']),
+            tags: JSON.stringify(['Goods']),
             isService: false
           }
         ]

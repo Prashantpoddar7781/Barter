@@ -3197,12 +3197,32 @@ const ProfilePage = () => {
   const { id: paramId } = useParams();
   const [listings, setListings] = useListings();
   const [activeUser, setActiveUser] = useAuth();
+  const [chats] = useChats();
   
   const [toastMsg, setToastMsg] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [newNameVal, setNewNameVal] = useState('');
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [tradeHistory, setTradeHistory] = useState<any[]>([]);
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const token = localStorage.getItem('barter_user_token');
+      if (!token) return;
+      try {
+        const res = await fetch(getApiUrl('/api/trades/history'), {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setTradeHistory(data);
+        }
+      } catch (err) {
+        console.error("Error fetching trade history:", err);
+      }
+    };
+    fetchHistory();
+  }, []);
 
   const currentUserObj = activeUser || defaultLocalUser;
   const isPublicProfile = !!paramId && paramId !== currentUserObj.id && paramId !== 'me';
@@ -3244,6 +3264,17 @@ const ProfilePage = () => {
   const user = profileUser || currentUserObj;
   const myListings = listings.filter(l => l.userId === user.id || (!isPublicProfile && (l.userId === 'me' || l.userId === currentUserObj.id)));
 
+  // Determine if active user has traded or chatted with this public member
+  const hasChatted = chats.some(c => 
+    (c.senderId === currentUserObj.id && c.receiverId === user.id) || 
+    (c.senderId === user.id && c.receiverId === currentUserObj.id)
+  );
+  const hasCompletedTrade = tradeHistory.some(t => 
+    (t.user1Id === currentUserObj.id && t.user2Id === user.id) || 
+    (t.user2Id === currentUserObj.id && t.user1Id === user.id)
+  );
+  const canRate = isPublicProfile && (hasChatted || hasCompletedTrade);
+
   // Track profile view event
   useEffect(() => {
     if (user && user.id) {
@@ -3267,25 +3298,7 @@ const ProfilePage = () => {
     setTimeout(() => setToastMsg(''), 3000);
   };
 
-  const [tradeHistory, setTradeHistory] = useState<any[]>([]);
-  useEffect(() => {
-    const fetchHistory = async () => {
-      const token = localStorage.getItem('barter_user_token');
-      if (!token) return;
-      try {
-        const res = await fetch(getApiUrl('/api/trades/history'), {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setTradeHistory(data);
-        }
-      } catch (err) {
-        console.error("Error fetching trade history:", err);
-      }
-    };
-    fetchHistory();
-  }, []);
+
 
   const handleNameSave = () => {
     if (!newNameVal.trim()) return;
@@ -3586,47 +3599,49 @@ const ProfilePage = () => {
                 Propose Trade Offer 🤝
               </button>
               
-              <div className="flex flex-col items-center gap-1 p-2 bg-white border border-border-sleek rounded-2xl w-full max-w-[200px] shadow-sm">
-                <span className="text-[8px] font-black text-text-charcoal/40 uppercase tracking-wider">Rate this member</span>
-                <div className="flex gap-1.5">
-                  {[1, 2, 3, 4, 5].map((starVal) => (
-                    <button
-                      key={starVal}
-                      onClick={async () => {
-                        const token = localStorage.getItem('barter_user_token');
-                        if (!token) {
-                          showToast("Please log in to submit a rating! 🔑");
-                          return;
-                        }
-                        try {
-                          const res = await fetch(getApiUrl(`/api/users/${user.id}/rate`), {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify({ rating: starVal })
-                          });
-                          if (res.ok) {
-                            const data = await res.json();
-                            showToast(`Rated ${starVal} stars successfully! ⭐`);
-                            setProfileUser(prev => prev ? { ...prev, rating: data.rating } : null);
-                          } else {
-                            const data = await res.json();
-                            showToast(data.error || "Failed to submit rating.");
+              {canRate && (
+                <div className="flex flex-col items-center gap-1 p-2 bg-white border border-border-sleek rounded-2xl w-full max-w-[200px] shadow-sm">
+                  <span className="text-[8px] font-black text-text-charcoal/40 uppercase tracking-wider">Rate this member</span>
+                  <div className="flex gap-1.5">
+                    {[1, 2, 3, 4, 5].map((starVal) => (
+                      <button
+                        key={starVal}
+                        onClick={async () => {
+                          const token = localStorage.getItem('barter_user_token');
+                          if (!token) {
+                            showToast("Please log in to submit a rating! 🔑");
+                            return;
                           }
-                        } catch (err) {
-                          showToast("Failed to submit rating.");
-                        }
-                      }}
-                      className="text-base hover:scale-125 transition-transform text-amber-400 hover:text-amber-500 cursor-pointer"
-                      aria-label={`Rate ${starVal} stars`}
-                    >
-                      ★
-                    </button>
-                  ))}
+                          try {
+                            const res = await fetch(getApiUrl(`/api/users/${user.id}/rate`), {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                              },
+                              body: JSON.stringify({ rating: starVal })
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              showToast(`Rated ${starVal} stars successfully! ⭐`);
+                              setProfileUser(prev => prev ? { ...prev, rating: data.rating } : null);
+                            } else {
+                              const data = await res.json();
+                              showToast(data.error || "Failed to submit rating.");
+                            }
+                          } catch (err) {
+                            showToast("Failed to submit rating.");
+                          }
+                        }}
+                        className="text-base hover:scale-125 transition-transform text-amber-400 hover:text-amber-500 cursor-pointer"
+                        aria-label={`Rate ${starVal} stars`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
