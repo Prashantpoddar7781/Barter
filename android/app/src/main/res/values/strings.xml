@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BarterHub</string>
+    <string name="title_activity_main">BarterHub</string>
+    <string name="package_name">in.gobarter.app</string>
+    <string name="custom_url_scheme">in.gobarter.app</string>
+</resources>
